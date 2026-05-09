@@ -1,16 +1,14 @@
 # User & Knowledge Base Service — Low-Level Design
 
-**Status:** Draft v1.0
-
-**Owner:** Platform Backend Team
-
+**Status:** Draft v1.0  
+**Owner:** Platform Backend Team  
 **Tech Stack:** Node.js 22 (TypeScript 5.x), Fastify 5, Prisma ORM 6, PostgreSQL 16, Apache Kafka (kafkajs)
 
 ---
 
 ## 1. Directory & Module Structure
 
-```
+```text
 user-kb-service/
 ├── src/
 │   ├── server.ts                    # Fastify bootstrap, plugin registration, graceful shutdown
@@ -66,7 +64,7 @@ user-kb-service/
 │   │   ├── messaging/
 │   │   │   ├── kafka.ts             # Kafka producer singleton (kafkajs)
 │   │   │   ├── kafka-consumer.ts    # Optional: inbound event handlers
-│   │   │   └── events.ts           # Event name constants + typed payload maps
+│   │   │   └── events.ts            # Event name constants + typed payload maps
 │   │   └── security/
 │   │       ├── jwt.ts               # sign/verify/refresh helpers (jose)
 │   │       ├── encryption.ts        # AES-256-GCM envelope encryption for OAuth tokens
@@ -105,6 +103,61 @@ user-kb-service/
 ---
 
 ## 2. Database Schema (Prisma ORM)
+
+### 2.1 Entity-Relationship Diagram
+
+```mermaid
+erDiagram
+    User ||--o{ OAuthConnection : "has many"
+    User ||--o| NotificationPreference : "has one"
+    User ||--o| KnowledgeBase : "has one"
+
+    User {
+        string id PK "uuid"
+        string email UK "Citext"
+        string roles "Enum: CANDIDATE, RECRUITER, ADMIN"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    OAuthConnection {
+        string id PK "uuid"
+        string userId FK "uuid"
+        string provider "Enum: GITHUB, LINKEDIN"
+        string providerUserId
+        string encryptedToken "AES-256-GCM envelope"
+        string scope "array"
+        datetime expiresAt
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    NotificationPreference {
+        string id PK "uuid"
+        string userId FK "Unique"
+        string digestFrequency "Enum"
+        float minMatchScore
+        boolean notifyOnNewJobs
+        boolean notifyOnStatusChange
+        string quietHoursStart
+        string quietHoursEnd
+        string channels "jsonb"
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    KnowledgeBase {
+        string id PK "uuid"
+        string userId FK "Unique"
+        string profileGraph "jsonb"
+        int version "Optimistic lock"
+        datetime lastEnriched
+        datetime createdAt
+        datetime updatedAt
+    }
+```
+
+### 2.2 Prisma Schema
 
 ```prisma
 // prisma/schema.prisma
@@ -216,7 +269,6 @@ model KnowledgeBase {
 ```
 
 **Design notes:**
-
 - **`@db.Citext`** on `User.email` provides case-insensitive uniqueness without an extra index.
 - **`encryptedToken`** uses envelope encryption: the data key is fetched from a KMS at startup, cached in memory, and used for AES-256-GCM encrypt/decrypt at the application layer. The column stores only the ciphertext envelope.
 - **`NotificationPreference.channels`** is JSONB so new channel types (SMS, webhook) don't require migrations.
@@ -237,7 +289,7 @@ Handles the second leg of the OAuth 2.0 authorization code flow.
 {
   "provider": "GITHUB",
   "code": "abc123def456",
-  "redirectUri": "https://app.example.com/oauth/callback",
+  "redirectUri": "[https://app.example.com/oauth/callback](https://app.example.com/oauth/callback)",
   "codeVerifier": "s256-challenge-verifier-string"
 }
 ```
@@ -312,7 +364,7 @@ Upserts notification preferences for the authenticated user. Returns the full pr
 }
 ```
 
-All fields are optional — only send what you want to change.
+*All fields are optional — only send what you want to change.*
 
 **Response `200 OK`:**
 ```json
@@ -363,47 +415,46 @@ Returns the current Knowledge Base graph for the authenticated user.
 
 ### 4.1 `AuthService` — OAuth Callback Flow
 
-```
-┌──────────┐      ┌──────────────┐      ┌───────────────┐      ┌──────────┐
-│  Client  │      │ AuthController│      │  AuthService  │      │  Prisma  │
-└────┬─────┘      └──────┬───────┘      └───────┬───────┘      └────┬─────┘
-     │  POST /oauth/cb   │                      │                   │
-     │──────────────────>│                      │                   │
-     │                   │  handleCallback(dto) │                   │
-     │                   │─────────────────────>│                   │
-     │                   │                      │                   │
-     │                   │                      │ 1. Resolve OAuth  │
-     │                   │                      │    provider impl  │
-     │                   │                      │    (Strategy pat) │
-     │                   │                      │                   │
-     │                   │                      │ 2. POST to        │
-     │                   │                      │    provider token │
-     │                   │                      │    endpoint       │
-     │                   │                      │    (code → token) │
-     │                   │                      │                   │
-     │                   │                      │ 3. GET provider   │
-     │                   │                      │    user info      │
-     │                   │                      │                   │
-     │                   │                      │ 4. Encrypt tokens │
-     │                   │                      │    (AES-256-GCM)  │
-     │                   │                      │                   │
-     │                   │                      │ 5. upsertUser()   │
-     │                   │                      │──────────────────>│
-     │                   │                      │                   │
-     │                   │                      │ 6. upsertOAuthConn│
-     │                   │                      │──────────────────>│
-     │                   │                      │                   │
-     │                   │                      │ 7. signJWT(user)  │
-     │                   │                      │                   │
-     │                   │                      │ 8. If isNew:      │
-     │                   │                      │    emit Profile-  │
-     │                   │                      │    Enrichment-    │
-     │                   │                      │    Triggered      │
-     │                   │                      │                   │
-     │                   │  AuthResult          │                   │
-     │                   │<─────────────────────│                   │
-     │  200 + JWT + user │                      │                   │
-     │<──────────────────│                      │                   │
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant AC as AuthController
+    participant AS as AuthService
+    participant Provider as OAuth Strategy
+    participant Enc as EncryptionService
+    participant DB as Prisma (DB)
+    participant JWT as JwtService
+    participant Kafka as KafkaProducer
+
+    Client->>AC: POST /oauth/cb (provider, code)
+    AC->>AS: handleCallback(dto)
+    
+    AS->>Provider: exchangeCode(dto)
+    Provider-->>AS: TokenResponse (accessToken, refreshToken)
+    
+    AS->>Provider: getUserProfile(accessToken)
+    Provider-->>AS: RemoteProfile (email, id)
+    
+    AS->>Enc: encrypt(tokens)
+    Enc-->>AS: Encrypted Envelopes
+    
+    AS->>DB: upsertByEmail(email)
+    DB-->>AS: User Entity (yields isNew status)
+    
+    AS->>DB: upsertConnection(provider, encryptedTokens)
+    DB-->>AS: OAuthConnection Entity
+    
+    AS->>JWT: signAccess() & signRefresh()
+    JWT-->>AS: JWT Pair
+    
+    opt If isNew == true
+        AS->>Kafka: publish(ProfileEnrichmentTriggered, payload)
+        note right of Kafka: Event consumed by external<br/>Profile Enrichment Worker
+    end
+    
+    AS-->>AC: AuthResult (Tokens + User)
+    AC-->>Client: 200 OK
 ```
 
 **Service pseudocode:**
@@ -597,7 +648,7 @@ The `ProfileEnrichmentTriggered` event fires **exactly once** — at the end of 
 
 ```json
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$schema": "[https://json-schema.org/draft/2020-12/schema](https://json-schema.org/draft/2020-12/schema)",
   "title": "ProfileEnrichmentTriggered",
   "type": "object",
   "properties": {
@@ -665,7 +716,7 @@ interface EventPayloads {
   [EventName.PreferencesUpdated]:         { userId: string };
 }
 
-interface Envelope<E extends keyof EventPayloads> {
+interface Envelope<E EventPayloads extends keyof> {
   eventId:   string;
   eventType: E;
   version:   string;
@@ -691,7 +742,7 @@ export class KafkaProducer {
     await this.producer.connect();
   }
 
-  async publish<E extends keyof EventPayloads>(
+  async publish<E EventPayloads extends keyof>(
     eventType: E,
     payload: EventPayloads[E],
   ): Promise<void> {
@@ -839,17 +890,37 @@ export function requireRole(...allowed: UserRole[]) {
 
 ### 6.4 Token Refresh Flow
 
-```
-POST /api/v1/auth/refresh
-Body: { "refreshToken": "dGhpcyBpcyBhIHJlZnJl..." }
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant API as AuthRoutes
+    participant JWT as JwtService
+    participant Redis as Redis (Cache)
+    participant DB as Prisma (DB)
 
-1. Decode & verify refresh JWT signature + expiry
-2. Look up jti in Redis whitelist → if missing, token was already used (replay attack)
-3. DELETE the old jti from Redis (single-use)
-4. Look up the user → if deleted, reject
-5. Sign a new access + refresh pair
-6. INSERT the new refresh jti into Redis with TTL = 7 days
-7. Return { accessToken, refreshToken, expiresIn: 900 }
+    Client->>API: POST /auth/refresh { refreshToken }
+    
+    API->>JWT: verifyRefresh(token)
+    JWT-->>API: payload (sub, jti, exp)
+    
+    API->>Redis: GET jti
+    alt jti not found (Replay Attack)
+        Redis-->>API: null
+        API-->>Client: 401 Unauthorized (Token Revoked/Used)
+    else jti found
+        Redis-->>API: valid
+        API->>Redis: DEL old jti (Enforce single-use)
+        
+        API->>DB: findById(sub)
+        DB-->>API: User details
+        
+        API->>JWT: signAccess() & signRefresh()
+        JWT-->>API: New Tokens (new jti)
+        
+        API->>Redis: SET new jti (TTL: 7 days)
+        API-->>Client: 200 OK (New Tokens)
+    end
 ```
 
 ---
@@ -877,11 +948,11 @@ ENCRYPTION_KEK_URI=vault://transit/keys/user-kb-oauth
 # ── OAuth ────────────────────────────────────────────────────
 GITHUB_CLIENT_ID=...
 GITHUB_CLIENT_SECRET=...
-GITHUB_REDIRECT_URI=https://app.example.com/oauth/callback
+GITHUB_REDIRECT_URI=[https://app.example.com/oauth/callback](https://app.example.com/oauth/callback)
 
 LINKEDIN_CLIENT_ID=...
 LINKEDIN_CLIENT_SECRET=...
-LINKEDIN_REDIRECT_URI=https://app.example.com/oauth/callback
+LINKEDIN_REDIRECT_URI=[https://app.example.com/oauth/callback](https://app.example.com/oauth/callback)
 
 # ── Kafka ────────────────────────────────────────────────────
 KAFKA_BROKERS=localhost:9092
@@ -910,3 +981,4 @@ CREATE INDEX idx_users_candidates ON users (email)
 ---
 
 This LLD is ready for review. The next steps would be scaffolding the project from this structure and implementing the modules in the order: Auth → User → KnowledgeBase → Notifications.
+````</E></E></E></Result<KnowledgeBase,></ProfileGraph></Result<AuthResult,></OAuthProvider,></T,E>

@@ -1,7 +1,9 @@
 # User & Knowledge Base Service — Low-Level Design
 
 **Status:** Draft v1.0
+
 **Owner:** Platform Backend Team
+
 **Tech Stack:** Node.js 22 (TypeScript 5.x), Fastify 5, Prisma ORM 6, PostgreSQL 16, Apache Kafka (kafkajs)
 
 ---

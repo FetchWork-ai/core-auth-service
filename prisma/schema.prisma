@@ -1,0 +1,102 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  CANDIDATE
+  RECRUITER
+  ADMIN
+}
+
+enum OAuthProvider {
+  GITHUB
+  LINKEDIN
+}
+
+enum DigestFrequency {
+  INSTANT
+  DAILY
+  WEEKLY
+  NEVER
+}
+
+// ── User ────────────────────────────────────────────────────────────────────
+
+model User {
+  id        String    @id @default(uuid()) @db.Uuid
+  email     String    @unique @db.Citext
+  roles     UserRole  @default(CANDIDATE)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  oauthConnections     OAuthConnection[]
+  notificationPrefs    NotificationPreference?
+  knowledgeBase        KnowledgeBase?
+
+  @@map("users")
+}
+
+// ── OAuth Connection ────────────────────────────────────────────────────────
+
+model OAuthConnection {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @db.Uuid
+  provider        OAuthProvider
+  providerUserId  String        @map("provider_user_id")
+  encryptedToken  String        @map("encrypted_token_ref") @db.Text
+  scope           String[]
+  expiresAt       DateTime?     @map("expires_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@map("oauth_connections")
+}
+
+// ── Notification Preference ─────────────────────────────────────────────────
+
+model NotificationPreference {
+  id                 String          @id @default(uuid()) @db.Uuid
+  userId             String          @unique @db.Uuid
+  digestFrequency    DigestFrequency @default(DAILY)
+  minMatchScore      Decimal         @default(0.70) @db.Decimal(3, 2)
+  notifyOnNewJobs    Boolean         @default(true)
+  notifyOnStatusChange Boolean       @default(false)
+  quietHoursStart    String?         @db.VarChar(5)
+  quietHoursEnd      String?         @db.VarChar(5)
+  channels           Json          @default("[]")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ── Knowledge Base ──────────────────────────────────────────────────────────
+
+model KnowledgeBase {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @unique @db.Uuid
+  profileGraph  Json     @map("profile_graph")
+  version       Int      @default(1)
+  lastEnriched  DateTime? @map("last_enriched_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("knowledge_bases")
+}

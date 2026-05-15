@@ -9,10 +9,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(8080),
   HOST: z.string().default('0.0.0.0'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url().optional(),
   KAFKA_BROKERS: z.string().transform((str) => str.split(',')),
-  // Note: Your schema requires a minimum of 32 characters for the secret!
   JWT_SECRET: z.string().min(32),
 });
 

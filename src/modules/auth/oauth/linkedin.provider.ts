@@ -7,12 +7,13 @@ import {
   OAuthCallbackDto,
 } from './oauth-provider.interface.js';
 import { logger } from '../../../shared/logger.js';
+import { config } from '../../../config/index.js';
 
 export class LinkedInProvider implements IOAuthProvider {
   readonly provider = 'LINKEDIN';
-  private readonly clientId = process.env.LINKEDIN_CLIENT_ID ?? '';
-  private readonly clientSecret = process.env.LINKEDIN_CLIENT_SECRET ?? '';
-  private readonly redirectUri = process.env.LINKEDIN_REDIRECT_URI ?? '';
+  private readonly clientId = config.LINKEDIN_CLIENT_ID;
+  private readonly clientSecret = config.LINKEDIN_CLIENT_SECRET;
+  private readonly redirectUri = config.LINKEDIN_REDIRECT_URI;
 
   async exchangeCode(dto: OAuthCallbackDto): Promise<Result<TokenResponse, OAuthDeniedError>> {
     try {

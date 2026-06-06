@@ -61,3 +61,33 @@ export class ConcurrencyConflictError extends DomainError {
     super(message, 'CONCURRENCY_CONFLICT');
   }
 }
+
+export class UserNotVerifiedError extends DomainError {
+  constructor(message = 'User email is not verified') {
+    super(message, 'EMAIL_NOT_VERIFIED');
+  }
+}
+
+export class InvalidCredentialsError extends DomainError {
+  constructor(message = 'Invalid email or password') {
+    super(message, 'INVALID_CREDENTIALS');
+  }
+}
+
+export class InvalidOtpError extends DomainError {
+  constructor(message = 'Invalid or expired OTP') {
+    super(message, 'INVALID_OTP');
+  }
+}
+
+export class MaxOtpAttemptsExceededError extends DomainError {
+  constructor(message = 'Too many failed verification attempts. Please request a new OTP.') {
+    super(message, 'MAX_OTP_ATTEMPTS_EXCEEDED');
+  }
+}
+
+export class OtpCooldownError extends DomainError {
+  constructor(message = 'Please wait before requesting a new OTP.') {
+    super(message, 'OTP_COOLDOWN');
+  }
+}

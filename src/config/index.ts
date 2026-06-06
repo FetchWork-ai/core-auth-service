@@ -14,6 +14,14 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   KAFKA_BROKERS: z.string().transform((str) => str.split(',')),
   JWT_SECRET: z.string().min(32),
+  OTP_SALT_SECRET: z.string().min(16).default('fallback-otp-salt-secret'),
+  // OAuth
+  GITHUB_CLIENT_ID: z.string(),
+  GITHUB_CLIENT_SECRET: z.string(),
+  GITHUB_REDIRECT_URI: z.string().url(),
+  LINKEDIN_CLIENT_ID: z.string(),
+  LINKEDIN_CLIENT_SECRET: z.string(),
+  LINKEDIN_REDIRECT_URI: z.string().url(),
 });
 
 // 3. Now when Zod checks process.env, the variables will actually be there!

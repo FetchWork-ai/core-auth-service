@@ -114,3 +114,7 @@ dist
 # Prisma
 # Ignore Prisma client generation if using custom output
 # /prisma/client
+
+
+*.docx
+*.pdf

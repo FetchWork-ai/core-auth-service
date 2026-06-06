@@ -4,6 +4,10 @@ import { OAuthConnectionRepository } from './oauth/oauth-connection.repository.j
 import { EncryptionService } from '../../infrastructure/security/encryption.js';
 import { JwtService } from '../../infrastructure/security/jwt.js';
 import { KafkaProducer, EventName } from '../../infrastructure/messaging/kafka.js';
+import { HashService } from '../../infrastructure/security/hash.js';
+import { OtpService } from '../../infrastructure/security/otp.js';
+import { IEmailSender } from '../../infrastructure/email/email.service.js';
+import { OtpRepository } from './otp/otp.repository.js';
 import {
   IOAuthProvider,
   OAuthCallbackDto,
@@ -16,6 +20,12 @@ import {
   MissingEmailError,
   UnauthorizedError,
   DomainError,
+  ConflictError,
+  InvalidCredentialsError,
+  UserNotVerifiedError,
+  InvalidOtpError,
+  MaxOtpAttemptsExceededError,
+  OtpCooldownError,
 } from '../../shared/errors.js';
 
 export class AuthError extends DomainError {
@@ -37,14 +47,228 @@ export interface AuthResult {
 }
 
 export class AuthService {
+  private readonly MAX_OTP_ATTEMPTS = 3;
+  private readonly OTP_COOLDOWN_SECONDS = 60;
+
   constructor(
     private readonly providers: Map<string, IOAuthProvider>,
     private readonly userRepo: UserRepository,
     private readonly oauthRepo: OAuthConnectionRepository,
     private readonly encryption: EncryptionService,
     private readonly jwt: JwtService,
-    private readonly kafka: KafkaProducer
+    private readonly kafka: KafkaProducer,
+    private readonly hashService: HashService,
+    private readonly otpService: OtpService,
+    private readonly emailSender: IEmailSender,
+    private readonly otpRepo: OtpRepository
   ) {}
+
+  // ── Email/Password Sign-Up ──────────────────────────────────────────────
+
+  async signup(email: string, password: string): Promise<Result<{ message: string; email: string }, DomainError>> {
+    // 1. Hash password
+    const hashResult = await this.hashService.hash(password);
+    if (hashResult.isErr()) {
+      return Result.err(new AuthError('Failed to hash password'));
+    }
+
+    // 2. Create user with PENDING_VERIFICATION status
+    const userResult = await this.userRepo.createWithPassword({
+      email,
+      passwordHash: hashResult.value,
+    });
+
+    if (userResult.isErr()) {
+      return Result.err(userResult.error as DomainError);
+    }
+
+    // 3. Generate OTP and persist
+    const otp = this.otpService.generate(email);
+    const otpResult = await this.otpRepo.save({
+      email,
+      codeHash: otp.codeHash,
+      purpose: 'EMAIL_VERIFICATION',
+      expiresAt: otp.expiresAt,
+    });
+
+    if (otpResult.isErr()) {
+      return Result.err(new AuthError('Failed to generate verification code'));
+    }
+
+    // 4. Send verification email
+    await this.emailSender.sendVerificationEmail(email, otp.code);
+
+    // 5. Publish Kafka event
+    await this.kafka.publish(EventName.ProfileEnrichmentTriggered, {
+      userId: userResult.value.id,
+      provider: 'EMAIL',
+      providerAccessToken: '',
+    });
+
+    return Result.ok({
+      message: 'User registered successfully. Verification code sent to email.',
+      email,
+    });
+  }
+
+  // ── OTP Verification ────────────────────────────────────────────────────
+
+  async verifyOtp(
+    email: string,
+    code: string,
+    purpose: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'MFA'
+  ): Promise<Result<AuthResult, DomainError>> {
+    // 1. Find active OTP
+    const otpResult = await this.otpRepo.findActive(email, purpose);
+    if (otpResult.isErr()) {
+      return Result.err(new InvalidOtpError());
+    }
+
+    const otpRecord = otpResult.value;
+    if (!otpRecord) {
+      return Result.err(new InvalidOtpError());
+    }
+
+    // 2. Check max attempts
+    if (otpRecord.attempts >= this.MAX_OTP_ATTEMPTS) {
+      await this.otpRepo.delete(otpRecord.id);
+      return Result.err(new MaxOtpAttemptsExceededError());
+    }
+
+    // 3. Verify OTP hash
+    const expectedHash = this.otpService.hashOtp(code, email);
+    if (expectedHash !== otpRecord.codeHash) {
+      await this.otpRepo.incrementAttempts(otpRecord.id);
+      return Result.err(new InvalidOtpError());
+    }
+
+    // 4. Delete OTP (single use)
+    await this.otpRepo.delete(otpRecord.id);
+
+    // 5. Find user and update status
+    const userResult = await this.userRepo.findByEmail(email);
+    if (userResult.isErr() || !userResult.value) {
+      return Result.err(new InvalidOtpError('User not found'));
+    }
+
+    const user = userResult.value;
+
+    // 6. If this is email verification, activate the user
+    if (purpose === 'EMAIL_VERIFICATION') {
+      await this.userRepo.updateStatus(user.id, 'ACTIVE');
+    }
+
+    // 7. Issue tokens
+    const accessToken = await this.jwt.signAccess({ sub: user.id, roles: [user.roles] });
+    const refreshToken = await this.jwt.signRefresh({ sub: user.id });
+
+    return Result.ok({
+      accessToken,
+      refreshToken,
+      expiresIn: 900,
+      user: {
+        id: user.id,
+        email: user.email,
+        roles: [user.roles],
+        isNew: false,
+      },
+    });
+  }
+
+  // ── Email/Password Sign-In ──────────────────────────────────────────────
+
+  async signin(email: string, password: string): Promise<Result<AuthResult, DomainError>> {
+    // 1. Find user by email
+    const userResult = await this.userRepo.findByEmail(email);
+    if (userResult.isErr() || !userResult.value) {
+      return Result.err(new InvalidCredentialsError());
+    }
+
+    const user = userResult.value;
+
+    // 2. Check if user has a password (could be OAuth-only)
+    if (!user.passwordHash) {
+      return Result.err(new InvalidCredentialsError());
+    }
+
+    // 3. Verify password
+    const verifyResult = await this.hashService.verify(password, user.passwordHash);
+    if (verifyResult.isErr() || !verifyResult.value) {
+      return Result.err(new InvalidCredentialsError());
+    }
+
+    // 4. Check user status
+    if (user.status === 'PENDING_VERIFICATION') {
+      return Result.err(new UserNotVerifiedError());
+    }
+
+    if (user.status === 'SUSPENDED') {
+      return Result.err(new UnauthorizedError('Account has been suspended'));
+    }
+
+    // 5. Issue tokens
+    const accessToken = await this.jwt.signAccess({ sub: user.id, roles: [user.roles] });
+    const refreshToken = await this.jwt.signRefresh({ sub: user.id });
+
+    return Result.ok({
+      accessToken,
+      refreshToken,
+      expiresIn: 900,
+      user: {
+        id: user.id,
+        email: user.email,
+        roles: [user.roles],
+        isNew: false,
+      },
+    });
+  }
+
+  // ── Resend OTP ──────────────────────────────────────────────────────────
+
+  async resendOtp(
+    email: string,
+    purpose: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'MFA'
+  ): Promise<Result<{ message: string }, DomainError>> {
+    // 1. Check cooldown — if an active OTP was created < 60s ago, reject
+    const existingOtp = await this.otpRepo.findActive(email, purpose);
+    if (existingOtp.isOk() && existingOtp.value) {
+      const secondsSinceCreated = (Date.now() - existingOtp.value.createdAt.getTime()) / 1000;
+      if (secondsSinceCreated < this.OTP_COOLDOWN_SECONDS) {
+        return Result.err(new OtpCooldownError());
+      }
+    }
+
+    // 2. Verify user exists
+    const userResult = await this.userRepo.findByEmail(email);
+    if (userResult.isErr() || !userResult.value) {
+      // Return success anyway to avoid email enumeration
+      return Result.ok({ message: 'Verification code resent.' });
+    }
+
+    // 3. Generate and persist new OTP
+    const otp = this.otpService.generate(email);
+    const otpResult = await this.otpRepo.save({
+      email,
+      codeHash: otp.codeHash,
+      purpose,
+      expiresAt: otp.expiresAt,
+    });
+
+    if (otpResult.isErr()) {
+      return Result.err(new AuthError('Failed to generate verification code'));
+    }
+
+    // 4. Send email
+    if (purpose === 'EMAIL_VERIFICATION') {
+      await this.emailSender.sendVerificationEmail(email, otp.code);
+    } else {
+      await this.emailSender.sendPasswordResetEmail(email, otp.code);
+    }
+
+    return Result.ok({ message: 'Verification code resent.' });
+  }
+
+  // ── OAuth Callback (existing) ───────────────────────────────────────────
 
   async handleCallback(dto: OAuthCallbackDto & { provider: string }): Promise<Result<AuthResult, AuthError>> {
     // 1. Look up the OAuth provider strategy

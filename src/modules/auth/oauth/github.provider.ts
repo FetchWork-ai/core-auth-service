@@ -11,9 +11,9 @@ import { logger } from '../../../shared/logger.js';
 
 export class GitHubProvider implements IOAuthProvider {
   readonly provider = 'GITHUB';
-  private readonly clientId = process.env.GITHUB_CLIENT_ID ?? '';
-  private readonly clientSecret = process.env.GITHUB_CLIENT_SECRET ?? '';
-  private readonly redirectUri = process.env.GITHUB_REDIRECT_URI ?? '';
+  private readonly clientId = config.GITHUB_CLIENT_ID;
+  private readonly clientSecret = config.GITHUB_CLIENT_SECRET;
+  private readonly redirectUri = config.GITHUB_REDIRECT_URI;
 
   async exchangeCode(dto: OAuthCallbackDto): Promise<Result<TokenResponse, OAuthDeniedError>> {
     try {

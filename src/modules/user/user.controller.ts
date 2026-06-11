@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { UserService, UserProfile, UpdateUserData } from './user.service.js';
-import { NotFoundError } from '../../shared/errors.js';
+import { NotFoundError, ForbiddenError } from '../../shared/errors.js';
 
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -32,7 +32,11 @@ export class UserController {
     const userId = request.currentUser.id;
     const data = request.body;
 
-    const result = await this.userService.updateUser(userId, data);
+    // Strip privileged fields — role changes require admin endpoint
+    const safeData: UpdateUserData = { ...data };
+    delete safeData.roles;
+
+    const result = await this.userService.updateUser(userId, safeData);
 
     if (result.isErr()) {
       const error = result.error;
@@ -54,6 +58,39 @@ export class UserController {
       email: user.email,
       roles: [user.roles],
       createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+    });
+  }
+
+  // Admin-only: change any user's role
+  async changeUserRole(
+    request: FastifyRequest<{ Params: { id: string }; Body: { roles: string } }>,
+    reply: FastifyReply
+  ) {
+    const targetUserId = request.params.id;
+    const { roles } = request.body;
+
+    const result = await this.userService.updateUser(targetUserId, { roles: roles as any });
+
+    if (result.isErr()) {
+      const error = result.error;
+      if (error instanceof NotFoundError) {
+        return reply.status(404).send({
+          error: error.code,
+          message: error.message,
+        });
+      }
+      return reply.status(500).send({
+        error: 'INTERNAL_ERROR',
+        message: 'Failed to update user role',
+      });
+    }
+
+    const user = result.value;
+    return reply.send({
+      id: user.id,
+      email: user.email,
+      roles: [user.roles],
       updatedAt: user.updatedAt.toISOString(),
     });
   }

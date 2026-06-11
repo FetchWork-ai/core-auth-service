@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
 import { Result } from '../../shared/result.js';
 import { DomainError } from '../../shared/errors.js';
 import { config } from '../../config/index.js';
@@ -17,9 +17,10 @@ export class EncryptionService {
   private readonly key: Buffer;
 
   constructor() {
-    // In production, fetch from KMS/Vault. For now, derive from env or use a default.
-    const keyHex = config.ENCRYPTION_KEY;
-    this.key = Buffer.from(keyHex.padEnd(32, '0').slice(0, 32));
+    // Derive a 256-bit key from the env secret using SHA-256
+    // In production, fetch from KMS/Vault instead.
+    const keyMaterial = config.ENCRYPTION_KEY;
+    this.key = createHash('sha256').update(keyMaterial).digest();
   }
 
   async encrypt(plaintext: string): Promise<Result<string, EncryptionError>> {

@@ -63,7 +63,6 @@ export function globalErrorHandler(
       err: error,
       url: request.url,
       method: request.method,
-      body: request.body,
     },
     'Unhandled server error'
   );

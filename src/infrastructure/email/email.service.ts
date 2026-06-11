@@ -10,14 +10,20 @@ export interface IEmailSender {
 export class ConsoleEmailSender implements IEmailSender {
   constructor(private readonly logger: pino.Logger) {}
 
-  async sendVerificationEmail(email: string, code: string): Promise<Result<void, Error>> {
-    this.logger.info({ email, code }, '📧 [EMAIL VERIFICATION OTP] SENT');
+  async sendVerificationEmail(email: string, _code: string): Promise<Result<void, Error>> {
+    this.logger.info({ recipient: this.maskEmail(email) }, '📧 [EMAIL VERIFICATION OTP] SENT');
     return Result.ok(undefined);
   }
 
-  async sendPasswordResetEmail(email: string, code: string): Promise<Result<void, Error>> {
-    this.logger.info({ email, code }, '📧 [PASSWORD RESET OTP] SENT');
+  async sendPasswordResetEmail(email: string, _code: string): Promise<Result<void, Error>> {
+    this.logger.info({ recipient: this.maskEmail(email) }, '📧 [PASSWORD RESET OTP] SENT');
     return Result.ok(undefined);
+  }
+
+  private maskEmail(email: string): string {
+    const [local, domain] = email.split('@');
+    if (!local || !domain) return '***';
+    return `${local[0]}***@${domain}`;
   }
 }
 
@@ -49,7 +55,7 @@ export class SmtpEmailSender implements IEmailSender {
 
   async sendVerificationEmail(email: string, code: string): Promise<Result<void, Error>> {
     try {
-      this.logger.info({ email }, 'Sending verification email via SMTP');
+      this.logger.info({ recipient: this.maskEmail(email) }, 'Sending verification email via SMTP');
       await this.transporter.sendMail({
         from: this.from,
         to: email,
@@ -59,14 +65,14 @@ export class SmtpEmailSender implements IEmailSender {
       });
       return Result.ok(undefined);
     } catch (error) {
-      this.logger.error({ err: error, email }, 'Failed to send verification email via SMTP');
+      this.logger.error({ err: error, recipient: this.maskEmail(email) }, 'Failed to send verification email via SMTP');
       return Result.err(error as Error);
     }
   }
 
   async sendPasswordResetEmail(email: string, code: string): Promise<Result<void, Error>> {
     try {
-      this.logger.info({ email }, 'Sending password reset email via SMTP');
+      this.logger.info({ recipient: this.maskEmail(email) }, 'Sending password reset email via SMTP');
       await this.transporter.sendMail({
         from: this.from,
         to: email,
@@ -76,8 +82,14 @@ export class SmtpEmailSender implements IEmailSender {
       });
       return Result.ok(undefined);
     } catch (error) {
-      this.logger.error({ err: error, email }, 'Failed to send password reset email via SMTP');
+      this.logger.error({ err: error, recipient: this.maskEmail(email) }, 'Failed to send password reset email via SMTP');
       return Result.err(error as Error);
     }
+  }
+
+  private maskEmail(email: string): string {
+    const [local, domain] = email.split('@');
+    if (!local || !domain) return '***';
+    return `${local[0]}***@${domain}`;
   }
 }

@@ -125,6 +125,19 @@ This document summarizes the progress made so far in building the Core Auth Serv
   - `DELETE /api/v1/users/me/kb` — Delete knowledge base (204, 404)
 - All routes require Bearer token authentication via `authenticate` middleware
 
+### 14. Notifications Module
+- **NotificationService**: `src/modules/notifications/notification.service.ts` — Full implementation:
+  - `getPreferences(userId)`: Retrieves the user's notification preferences from the database
+  - `updatePreferences(userId, data)`: Upserts notification preferences — creates with sensible defaults if none exist, otherwise updates only the provided fields
+  - `resetPreferences(userId)`: Deletes the user's notification preferences, restoring system defaults
+- **NotificationController**: `src/modules/notifications/notification.controller.ts` — HTTP handlers for GET, PUT, DELETE with proper status codes (200, 204, 404)
+- **NotificationRoutes**: `src/modules/notifications/notification.routes.ts` — Full Swagger/OpenAPI documentation:
+  - `GET /api/v1/users/me/notifications` — Retrieve notification preferences (200, 404)
+  - `PUT /api/v1/users/me/notifications` — Upsert notification preferences (200)
+  - `DELETE /api/v1/users/me/notifications` — Reset preferences to defaults (204, 404)
+- **Configurable preferences**: digestFrequency (INSTANT/DAILY/WEEKLY/NEVER), minMatchScore (0.00–1.00), notifyOnNewJobs, notifyOnStatusChange, quietHoursStart/End (HH:MM), channels (email/push/sms)
+- All routes require Bearer token authentication via `authenticate` middleware
+
 ---
 
 ## Next Steps
@@ -168,10 +181,19 @@ This document summarizes the progress made so far in building the Core Auth Serv
   - `DELETE /` — Delete the user's knowledge base (204, 404)
 - ✅ All routes require Bearer token authentication
 
-### Priority 5: Notifications Module
-- Implement notification routes in `src/modules/notifications/notification.routes.ts`
-- Implement notification controller in `src/modules/notifications/notification.controller.ts`
-- Complete NotificationService implementation
+### Priority 5: Notifications Module (COMPLETED ✅)
+- ✅ Implement notification routes in `src/modules/notifications/notification.routes.ts` with full Swagger/OpenAPI docs
+- ✅ Implement notification controller in `src/modules/notifications/notification.controller.ts`
+- ✅ Complete NotificationService implementation:
+  - `getPreferences(userId)`: Fetch with NotFoundError handling
+  - `updatePreferences(userId, data)`: Upsert with partial updates (only provided fields are changed)
+  - `resetPreferences(userId)`: Delete preferences to restore system defaults
+- ✅ Endpoints registered at `/api/v1/users/me/notifications`:
+  - `GET /` — Retrieve notification preferences (200, 404)
+  - `PUT /` — Upsert notification preferences with partial fields (200)
+  - `DELETE /` — Reset preferences to system defaults (204, 404)
+- ✅ Configurable preferences: digestFrequency, minMatchScore, notifyOnNewJobs, notifyOnStatusChange, quietHours, channels
+- ✅ All routes require Bearer token authentication
 
 ### Priority 6: Middleware & Security Hardening
 - Implement `src/middleware/authorize.ts` — Role-based access control

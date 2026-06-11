@@ -27,6 +27,9 @@ import { authRoutes } from './modules/auth/auth.routes.js';
 import { KnowledgeBaseService } from './modules/knowledge-base/kb.service.js';
 import { KnowledgeBaseController } from './modules/knowledge-base/kb.controller.js';
 import { kbRoutes } from './modules/knowledge-base/kb.routes.js';
+import { NotificationService } from './modules/notifications/notification.service.js';
+import { NotificationController } from './modules/notifications/notification.controller.js';
+import { notificationRoutes } from './modules/notifications/notification.routes.js';
 import { logger } from './shared/logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -198,6 +201,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(kbRoutes, {
     prefix: '/api/v1/users/me/kb',
     kbController,
+    jwtService,
+    userRepository,
+  });
+
+  // Notifications module
+  const notificationService = new NotificationService(notificationPreferenceRepository);
+  const notificationController = new NotificationController(notificationService);
+
+  await app.register(notificationRoutes, {
+    prefix: '/api/v1/users/me/notifications',
+    notificationController,
     jwtService,
     userRepository,
   });

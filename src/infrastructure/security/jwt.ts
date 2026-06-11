@@ -1,7 +1,9 @@
 import * as jose from 'jose';
+import Redis from 'ioredis';
 import { config } from '../../config/index.js';
 import { Result } from '../../shared/result.js';
 import { UnauthorizedError } from '../../shared/errors.js';
+import { logger } from '../../shared/logger.js';
 
 const secret = new TextEncoder().encode(config.JWT_SECRET);
 
@@ -16,10 +18,20 @@ export interface JwtPayload {
 export class JwtService {
   private accessTokenSecret: Uint8Array;
   private refreshTokenSecret: Uint8Array;
+  private redisClient: Redis | null = null;
+  private fallbackBlocklist = new Set<string>();
 
   constructor() {
     this.accessTokenSecret = secret;
     this.refreshTokenSecret = secret;
+
+    if (config.REDIS_URL) {
+      this.redisClient = new Redis(config.REDIS_URL);
+      this.redisClient.on('error', (err) => logger.error({ err }, 'Redis blocklist connection error'));
+      logger.info('Redis connected for JWT blocklist');
+    } else {
+      logger.warn('REDIS_URL not set. Using in-memory fallback blocklist for JWTs. NOT RECOMMENDED FOR PRODUCTION.');
+    }
   }
 
   async signAccess(payload: Omit<JwtPayload, 'jti'>): Promise<string> {
@@ -60,12 +72,22 @@ export class JwtService {
     }
   }
 
-  async isRevoked(_jti: string): Promise<boolean> {
-    // TODO: Implement Redis-based blocklist check
-    return false;
+  async isRevoked(jti: string): Promise<boolean> {
+    if (this.redisClient) {
+      const exists = await this.redisClient.exists(`bl_${jti}`);
+      return exists === 1;
+    }
+    return this.fallbackBlocklist.has(jti);
   }
 
-  async revokeToken(_jti: string): Promise<void> {
-    // TODO: Implement Redis-based token revocation
+  async revokeToken(jti: string, expiresInSeconds: number): Promise<void> {
+    if (this.redisClient) {
+      // Set key with expiry so it auto-cleans up from Redis
+      await this.redisClient.set(`bl_${jti}`, '1', 'EX', Math.max(1, expiresInSeconds));
+    } else {
+      this.fallbackBlocklist.add(jti);
+      // In-memory cleanup to avoid unbounded memory leak in dev
+      setTimeout(() => this.fallbackBlocklist.delete(jti), expiresInSeconds * 1000).unref();
+    }
   }
 }

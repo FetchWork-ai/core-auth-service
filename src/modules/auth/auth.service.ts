@@ -377,7 +377,9 @@ export class AuthService {
     }
 
     // Revoke old token and issue new ones
-    await this.jwt.revokeToken(payload.value.jti!);
+    const exp = payload.value.exp;
+    const expiresInSeconds = exp ? Math.max(1, exp - Math.floor(Date.now() / 1000)) : 604800; // 7 days fallback
+    await this.jwt.revokeToken(payload.value.jti!, expiresInSeconds);
 
     const accessToken = await this.jwt.signAccess({ sub: userResult.value.id, roles: [userResult.value.roles] });
     const newRefreshToken = await this.jwt.signRefresh({ sub: userResult.value.id });

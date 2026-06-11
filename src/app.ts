@@ -30,6 +30,7 @@ import { kbRoutes } from './modules/knowledge-base/kb.routes.js';
 import { NotificationService } from './modules/notifications/notification.service.js';
 import { NotificationController } from './modules/notifications/notification.controller.js';
 import { notificationRoutes } from './modules/notifications/notification.routes.js';
+import { globalErrorHandler } from './middleware/error-handler.js';
 import { logger } from './shared/logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -38,6 +39,8 @@ export async function buildApp(): Promise<FastifyInstance> {
       level: config.LOG_LEVEL,
     },
   });
+
+  app.setErrorHandler(globalErrorHandler);
 
   await app.register(swagger, {
     openapi: {

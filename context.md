@@ -138,6 +138,11 @@ This document summarizes the progress made so far in building the Core Auth Serv
 - **Configurable preferences**: digestFrequency (INSTANT/DAILY/WEEKLY/NEVER), minMatchScore (0.00–1.00), notifyOnNewJobs, notifyOnStatusChange, quietHoursStart/End (HH:MM), channels (email/push/sms)
 - All routes require Bearer token authentication via `authenticate` middleware
 
+### 15. Middleware & Security Hardening
+- **Role-Based Access Control (RBAC)**: Added `src/middleware/authorize.ts` which checks `request.currentUser.roles` against allowed roles (returns 403 Forbidden).
+- **Global Error Handler**: Added `src/middleware/error-handler.ts` which standardizes error responses. Catches `DomainError` variants, Fastify schema validation errors, and logs unhandled exceptions securely (returning generic 500 without leaking stack traces).
+- **Token Blocklist**: Upgraded `JwtService` to use `ioredis` for true stateful token revocation. `isRevoked` checks Redis via `EXISTS bl_<jti>`, and `revokeToken` sets a Redis key with an expiration (`EX`) equal to the token's remaining TTL, automatically cleaning up expired blocklist entries.
+
 ---
 
 ## Next Steps
@@ -195,10 +200,10 @@ This document summarizes the progress made so far in building the Core Auth Serv
 - ✅ Configurable preferences: digestFrequency, minMatchScore, notifyOnNewJobs, notifyOnStatusChange, quietHours, channels
 - ✅ All routes require Bearer token authentication
 
-### Priority 6: Middleware & Security Hardening
-- Implement `src/middleware/authorize.ts` — Role-based access control
-- Implement `src/middleware/error-handler.ts` — Global error serialization
-- Add Redis integration for JWT token blocklist (replace in-memory stubs)
+### Priority 6: Middleware & Security Hardening (COMPLETED ✅)
+- ✅ Implement `src/middleware/authorize.ts` — Role-based access control
+- ✅ Implement `src/middleware/error-handler.ts` — Global error serialization
+- ✅ Add Redis integration for JWT token blocklist (replace in-memory stubs) with `ioredis`
 
 ### Priority 7: Testing
 - Add unit tests for HashService, OtpService, AuthService

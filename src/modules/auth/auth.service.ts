@@ -26,6 +26,7 @@ import {
   InvalidOtpError,
   MaxOtpAttemptsExceededError,
   OtpCooldownError,
+  NotFoundError,
 } from '../../shared/errors.js';
 
 export class AuthError extends DomainError {
@@ -382,5 +383,113 @@ export class AuthService {
     const newRefreshToken = await this.jwt.signRefresh({ sub: userResult.value.id });
 
     return Result.ok({ accessToken, refreshToken: newRefreshToken });
+  }
+
+  // ── Request Password Reset ─────────────────────────────────────────────
+
+  async requestPasswordReset(email: string): Promise<Result<{ message: string }, DomainError>> {
+    // 1. Check cooldown for existing PASSWORD_RESET OTP
+    const existingOtp = await this.otpRepo.findActive(email, 'PASSWORD_RESET');
+    if (existingOtp.isOk() && existingOtp.value) {
+      const secondsSinceCreated = (Date.now() - existingOtp.value.createdAt.getTime()) / 1000;
+      if (secondsSinceCreated < this.OTP_COOLDOWN_SECONDS) {
+        return Result.err(new OtpCooldownError());
+      }
+    }
+
+    // 2. Verify user exists
+    const userResult = await this.userRepo.findByEmail(email);
+    if (userResult.isErr() || !userResult.value) {
+      // Return success anyway to prevent email enumeration
+      return Result.ok({ message: 'If the email exists, a password reset code has been sent.' });
+    }
+
+    const user = userResult.value;
+    if (user.status === 'SUSPENDED') {
+      return Result.err(new UnauthorizedError('Account has been suspended'));
+    }
+
+    // 3. Generate and persist OTP
+    const otp = this.otpService.generate(email);
+    const otpResult = await this.otpRepo.save({
+      email,
+      codeHash: otp.codeHash,
+      purpose: 'PASSWORD_RESET',
+      expiresAt: otp.expiresAt,
+    });
+
+    if (otpResult.isErr()) {
+      return Result.err(new AuthError('Failed to generate password reset code'));
+    }
+
+    // 4. Send email
+    await this.emailSender.sendPasswordResetEmail(email, otp.code);
+
+    return Result.ok({ message: 'If the email exists, a password reset code has been sent.' });
+  }
+
+  // ── Reset Password ──────────────────────────────────────────────────────
+
+  async resetPassword(
+    email: string,
+    code: string,
+    newPassword: string
+  ): Promise<Result<{ message: string }, DomainError>> {
+    // 1. Find active PASSWORD_RESET OTP
+    const otpResult = await this.otpRepo.findActive(email, 'PASSWORD_RESET');
+    if (otpResult.isErr()) {
+      return Result.err(new InvalidOtpError());
+    }
+
+    const otpRecord = otpResult.value;
+    if (!otpRecord) {
+      return Result.err(new InvalidOtpError());
+    }
+
+    // 2. Check max attempts
+    if (otpRecord.attempts >= this.MAX_OTP_ATTEMPTS) {
+      await this.otpRepo.delete(otpRecord.id);
+      return Result.err(new MaxOtpAttemptsExceededError());
+    }
+
+    // 3. Verify OTP hash
+    const expectedHash = this.otpService.hashOtp(code, email);
+    if (expectedHash !== otpRecord.codeHash) {
+      await this.otpRepo.incrementAttempts(otpRecord.id);
+      return Result.err(new InvalidOtpError());
+    }
+
+    // 4. Delete OTP (single use)
+    await this.otpRepo.delete(otpRecord.id);
+
+    // 5. Find user
+    const userResult = await this.userRepo.findByEmail(email);
+    if (userResult.isErr() || !userResult.value) {
+      return Result.err(new NotFoundError('User not found'));
+    }
+
+    const user = userResult.value;
+    if (user.status === 'SUSPENDED') {
+      return Result.err(new UnauthorizedError('Account has been suspended'));
+    }
+
+    // 6. Hash new password
+    const hashResult = await this.hashService.hash(newPassword);
+    if (hashResult.isErr()) {
+      return Result.err(new AuthError('Failed to hash password'));
+    }
+
+    // 7. Update password in DB
+    const updateResult = await this.userRepo.updatePassword(user.id, hashResult.value);
+    if (updateResult.isErr()) {
+      return Result.err(updateResult.error as DomainError);
+    }
+
+    // 8. If user was pending verification, activate them now
+    if (user.status === 'PENDING_VERIFICATION') {
+      await this.userRepo.updateStatus(user.id, 'ACTIVE');
+    }
+
+    return Result.ok({ message: 'Password reset successful.' });
   }
 }

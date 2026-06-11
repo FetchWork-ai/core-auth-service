@@ -284,4 +284,90 @@ export async function authRoutes(
       return authController.refreshTokens(request, reply);
     }
   );
+
+  // ── POST /password-reset/request ───────────────────────────────────────
+
+  fastify.post(
+    '/password-reset/request',
+    {
+      schema: {
+        description: 'Request a password reset OTP code. Sends an email to the user if the account exists.',
+        summary: 'Request Password Reset OTP',
+        tags: ['Authentication - Email/Password'],
+        body: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email', description: 'User registered email address' },
+          },
+        },
+        response: {
+          200: {
+            description: 'Password reset OTP generated and email sent (if email exists)',
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+          429: {
+            description: 'OTP resend cooldown active (60 seconds)',
+            ...errorResponseSchema,
+          },
+          400: {
+            description: 'Validation error',
+            ...errorResponseSchema,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      return authController.requestPasswordReset(request, reply);
+    }
+  );
+
+  // ── POST /password-reset ───────────────────────────────────────────────
+
+  fastify.post(
+    '/password-reset',
+    {
+      schema: {
+        description: 'Reset password using the OTP code received via email.',
+        summary: 'Reset Password',
+        tags: ['Authentication - Email/Password'],
+        body: {
+          type: 'object',
+          required: ['email', 'code', 'newPassword'],
+          properties: {
+            email: { type: 'string', format: 'email', description: 'User registered email address' },
+            code: { type: 'string', minLength: 6, maxLength: 6, description: '6-digit OTP code received in email' },
+            newPassword: { type: 'string', minLength: 8, description: 'New password (minimum 8 characters)' },
+          },
+        },
+        response: {
+          200: {
+            description: 'Password reset successful',
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+          429: {
+            description: 'Maximum OTP verification attempts exceeded',
+            ...errorResponseSchema,
+          },
+          404: {
+            description: 'User not found',
+            ...errorResponseSchema,
+          },
+          400: {
+            description: 'Invalid OTP code or password validation failed',
+            ...errorResponseSchema,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      return authController.resetPassword(request, reply);
+    }
+  );
 }

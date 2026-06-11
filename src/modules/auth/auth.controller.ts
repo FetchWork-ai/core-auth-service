@@ -8,6 +8,7 @@ import {
   InvalidOtpError,
   MaxOtpAttemptsExceededError,
   OtpCooldownError,
+  NotFoundError,
 } from '../../shared/errors.js';
 
 export class AuthController {
@@ -135,6 +136,52 @@ export class AuthController {
         error: result.error.code,
         message: result.error.message,
       });
+    }
+
+    return reply.send(result.value);
+  }
+
+  // ── Password Reset Flow ──────────────────────────────────────────────────
+
+  async requestPasswordReset(request: FastifyRequest, reply: FastifyReply) {
+    const { email } = request.body as { email: string };
+
+    const result = await this.authService.requestPasswordReset(email);
+
+    if (result.isErr()) {
+      const error = result.error;
+
+      if (error instanceof OtpCooldownError) {
+        return reply.status(429).send({ error: error.code, message: error.message });
+      }
+
+      return reply.status(400).send({ error: error.code, message: error.message });
+    }
+
+    return reply.send(result.value);
+  }
+
+  async resetPassword(request: FastifyRequest, reply: FastifyReply) {
+    const { email, code, newPassword } = request.body as {
+      email: string;
+      code: string;
+      newPassword: string;
+    };
+
+    const result = await this.authService.resetPassword(email, code, newPassword);
+
+    if (result.isErr()) {
+      const error = result.error;
+
+      if (error instanceof MaxOtpAttemptsExceededError) {
+        return reply.status(429).send({ error: error.code, message: error.message });
+      }
+
+      if (error instanceof NotFoundError) {
+        return reply.status(404).send({ error: error.code, message: error.message });
+      }
+
+      return reply.status(400).send({ error: error.code, message: error.message });
     }
 
     return reply.send(result.value);

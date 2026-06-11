@@ -17,13 +17,16 @@ import { KnowledgeBaseRepository } from './modules/knowledge-base/kb.repository.
 import { NotificationPreferenceRepository } from './modules/notifications/notification.repository.js';
 import { EncryptionService } from './infrastructure/security/encryption.js';
 import { KafkaProducer } from './infrastructure/messaging/kafka.js';
-import { ConsoleEmailSender } from './infrastructure/email/email.service.js';
+import { ConsoleEmailSender, SmtpEmailSender } from './infrastructure/email/email.service.js';
 import { IOAuthProvider } from './modules/auth/oauth/oauth-provider.interface.js';
 import { GitHubProvider } from './modules/auth/oauth/github.provider.js';
 import { LinkedInProvider } from './modules/auth/oauth/linkedin.provider.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { KnowledgeBaseService } from './modules/knowledge-base/kb.service.js';
+import { KnowledgeBaseController } from './modules/knowledge-base/kb.controller.js';
+import { kbRoutes } from './modules/knowledge-base/kb.routes.js';
 import { logger } from './shared/logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -136,7 +139,25 @@ export async function buildApp(): Promise<FastifyInstance> {
   const kafkaProducer = new KafkaProducer();
   const hashService = new HashService();
   const otpService = new OtpService();
-  const emailSender = new ConsoleEmailSender(logger);
+  
+  let emailSender;
+  if (
+    config.SMTP_HOST &&
+    config.SMTP_PORT &&
+    config.SMTP_USER &&
+    config.SMTP_PASS &&
+    config.SMTP_FROM
+  ) {
+    emailSender = new SmtpEmailSender(logger, {
+      host: config.SMTP_HOST,
+      port: config.SMTP_PORT,
+      user: config.SMTP_USER,
+      pass: config.SMTP_PASS,
+      from: config.SMTP_FROM,
+    });
+  } else {
+    emailSender = new ConsoleEmailSender(logger);
+  }
   
   const providers = new Map<string, IOAuthProvider>();
   providers.set('GITHUB', new GitHubProvider());
@@ -170,8 +191,16 @@ export async function buildApp(): Promise<FastifyInstance> {
     authController 
   });
   
-  // Placeholder for other modules
-  // await app.register(kbRoutes, { prefix: '/api/v1/users/me/kb' });
+  // Knowledge Base module
+  const knowledgeBaseService = new KnowledgeBaseService(knowledgeBaseRepository);
+  const kbController = new KnowledgeBaseController(knowledgeBaseService);
+
+  await app.register(kbRoutes, {
+    prefix: '/api/v1/users/me/kb',
+    kbController,
+    jwtService,
+    userRepository,
+  });
 
   return app;
 }

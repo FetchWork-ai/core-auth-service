@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { Result } from '../../shared/result.js';
 import { DomainError } from '../../shared/errors.js';
+import { config } from '../../config/index.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -17,7 +18,7 @@ export class EncryptionService {
 
   constructor() {
     // In production, fetch from KMS/Vault. For now, derive from env or use a default.
-    const keyHex = process.env.ENCRYPTION_KEY ?? 'default-key-for-development-only-32b';
+    const keyHex = config.ENCRYPTION_KEY;
     this.key = Buffer.from(keyHex.padEnd(32, '0').slice(0, 32));
   }
 

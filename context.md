@@ -58,11 +58,13 @@ This document summarizes the progress made so far in building the Core Auth Serv
 - **Encryption Service**: `src/infrastructure/security/encryption.ts` — AES-256-GCM envelope encryption for OAuth tokens.
 - **Hash Service**: `src/infrastructure/security/hash.ts` — Argon2id password hashing with production parameters (64MB memory, 3 iterations, 4 parallelism).
 - **OTP Service**: `src/infrastructure/security/otp.ts` — Cryptographic 6-digit OTP generation via `crypto.randomInt`, HMAC-SHA256 hashing for secure DB storage, 10-minute expiry.
-- **Email Service**: `src/infrastructure/email/email.service.ts` — `IEmailSender` interface (port/adapter pattern) with `ConsoleEmailSender` implementation for dev (logs OTP to console). Swap to SMTP/SES/SendGrid in production.
+- **Email Service**: `src/infrastructure/email/email.service.ts` — `IEmailSender` interface (port/adapter pattern) with two implementations:
+  - `ConsoleEmailSender` — logs OTP to terminal for development
+  - `SmtpEmailSender` — production SMTP sender via `nodemailer` (supports Resend, Mailtrap, SendGrid, AWS SES, or any SMTP provider). Auto-selected when `SMTP_*` environment variables are configured.
 - **Kafka Producer**: `src/infrastructure/messaging/kafka.ts` — event publishing for ProfileEnrichmentTriggered, UserDeleted, PreferencesUpdated.
 
 ### 8. Repositories
-- **UserRepository**: `src/modules/user/user.repository.ts` — findById, findByEmail, createWithPassword, upsertByEmail, updateStatus, update, delete
+- **UserRepository**: `src/modules/user/user.repository.ts` — findById, findByEmail, createWithPassword, upsertByEmail, updateStatus, updatePassword, update, delete
 - **OtpRepository**: `src/modules/auth/otp/otp.repository.ts` — save (auto-invalidates previous OTPs), findActive (excludes expired), incrementAttempts, delete
 - **OAuthConnectionRepository**: `src/modules/auth/oauth/oauth-connection.repository.ts` — findByProviderAndUserId, upsertConnection, findAllByUserId, deleteByUserId
 - **KnowledgeBaseRepository**: `src/modules/knowledge-base/kb.repository.ts` — findByUserId, upsert, delete
@@ -81,7 +83,9 @@ This document summarizes the progress made so far in building the Core Auth Serv
   - `resendOtp(email, purpose)`: Enforces 60-second cooldown, generates new OTP, sends email. Returns 200 for unknown emails (anti-enumeration)
   - `handleCallback(dto)`: OAuth callback flow (GitHub/LinkedIn) — token exchange, profile fetch, token encryption, user upsert, connection persist, JWT issuance
   - `refreshTokens(refreshToken)`: Token rotation with revocation
-- **AuthController**: `src/modules/auth/auth.controller.ts` — HTTP handlers with proper status code mapping (201, 400, 401, 403, 409, 429)
+  - `requestPasswordReset(email)`: Generates PASSWORD_RESET OTP, enforces 60s cooldown, sends reset email. Returns 200 for unknown emails (anti-enumeration)
+  - `resetPassword(email, code, newPassword)`: Verifies OTP (max 3 attempts), hashes new password (Argon2id), updates DB. Activates pending users on success
+- **AuthController**: `src/modules/auth/auth.controller.ts` — HTTP handlers with proper status code mapping (201, 400, 401, 403, 404, 409, 429)
 - **AuthRoutes**: `src/modules/auth/auth.routes.ts` — Full Swagger/OpenAPI documentation for all endpoints:
   - `POST /api/v1/auth/signup` — Email/password registration (201, 400, 409)
   - `POST /api/v1/auth/verify-otp` — OTP verification, returns JWT tokens (200, 400, 429)
@@ -89,6 +93,8 @@ This document summarizes the progress made so far in building the Core Auth Serv
   - `POST /api/v1/auth/otp/resend` — Resend OTP with 60s cooldown (200, 429)
   - `POST /api/v1/auth/:provider/callback` — OAuth callback (200, 400)
   - `POST /api/v1/auth/refresh` — Token refresh with rotation (200, 401)
+  - `POST /api/v1/auth/password-reset/request` — Request password reset OTP (200, 429)
+  - `POST /api/v1/auth/password-reset` — Reset password with OTP (200, 400, 404, 429)
 
 ### 11. User Module
 - **UserService**: Full implementation with getCurrentUser, updateUser, deleteUser
@@ -105,6 +111,19 @@ This document summarizes the progress made so far in building the Core Auth Serv
 - **10-minute OTP expiry** (time-limited validity)
 - **Anti-enumeration**: resend endpoint always returns 200 for unknown emails
 - **AES-256-GCM** encryption for stored OAuth provider tokens
+
+### 13. Knowledge Base Module
+- **KnowledgeBaseService**: `src/modules/knowledge-base/kb.service.ts` — Full implementation:
+  - `getKnowledgeBase(userId)`: Retrieves the user's knowledge base profile graph from the database
+  - `upsertProfileGraph(userId, incoming, expectedVersion)`: Deep-merges incoming profile graph data with existing data, enforcing optimistic concurrency via version checking
+  - `deleteKnowledgeBase(userId)`: Removes the user's knowledge base record
+  - `deepMergeProfileGraph(existing, incoming)`: Private recursive merge algorithm — concatenates & deduplicates arrays, recursively merges nested objects, overwrites scalars with incoming values
+- **KnowledgeBaseController**: `src/modules/knowledge-base/kb.controller.ts` — HTTP handlers for GET, PUT, DELETE with proper status codes (200, 204, 404, 409)
+- **KnowledgeBaseRoutes**: `src/modules/knowledge-base/kb.routes.ts` — Full Swagger/OpenAPI documentation:
+  - `GET /api/v1/users/me/kb` — Retrieve knowledge base (200, 404)
+  - `PUT /api/v1/users/me/kb` — Upsert profile graph with deep merge and version check (200, 404, 409)
+  - `DELETE /api/v1/users/me/kb` — Delete knowledge base (204, 404)
+- All routes require Bearer token authentication via `authenticate` middleware
 
 ---
 
@@ -123,15 +142,31 @@ This document summarizes the progress made so far in building the Core Auth Serv
 - ✅ Implement User controller in `src/modules/user/user.controller.ts`
 - ✅ Complete UserService implementation
 
-### Priority 3: Production Email Sender
-- Implement SMTP/SendGrid/SES adapter for `IEmailSender` interface
-- Replace `ConsoleEmailSender` with production implementation
-- Add email templates for verification and password reset
+### Priority 3: Production Email Sender (COMPLETED ✅)
+- ✅ Implement SMTP/SendGrid/SES adapter for `IEmailSender` interface
+- ✅ Replace `ConsoleEmailSender` with production implementation (SmtpEmailSender via nodemailer)
+- ✅ Add email templates for verification and password reset
+- ✅ Add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` environment config with Zod validation
+- ✅ Conditional wiring: uses `SmtpEmailSender` when SMTP vars are set, falls back to `ConsoleEmailSender`
+- ✅ Implement password reset flow:
+  - `POST /api/v1/auth/password-reset/request` — sends PASSWORD_RESET OTP
+  - `POST /api/v1/auth/password-reset` — verifies OTP and updates password (single-step)
+  - Added `updatePassword` method to `UserRepository`
+  - Added `requestPasswordReset` and `resetPassword` methods to `AuthService`
 
-### Priority 4: Knowledge Base Module
-- Implement KB routes in `src/modules/knowledge-base/kb.routes.ts`
-- Implement KB controller in `src/modules/knowledge-base/kb.controller.ts`
-- Implement deepMergeProfileGraph logic in KnowledgeBaseService
+### Priority 4: Knowledge Base Module (COMPLETED ✅)
+- ✅ Implement KB routes in `src/modules/knowledge-base/kb.routes.ts` with full Swagger/OpenAPI docs
+- ✅ Implement KB controller in `src/modules/knowledge-base/kb.controller.ts`
+- ✅ Implement deepMergeProfileGraph logic in KnowledgeBaseService:
+  - Arrays: concatenated and deduplicated (by value for primitives, by JSON for objects)
+  - Nested objects: recursively merged
+  - Scalars: incoming value overwrites existing
+- ✅ Optimistic concurrency control via `expectedVersion` (returns 409 on version mismatch)
+- ✅ Endpoints registered at `/api/v1/users/me/kb`:
+  - `GET /` — Retrieve the user's knowledge base (200, 404)
+  - `PUT /` — Upsert (deep-merge) the profile graph with version check (200, 409, 404)
+  - `DELETE /` — Delete the user's knowledge base (204, 404)
+- ✅ All routes require Bearer token authentication
 
 ### Priority 5: Notifications Module
 - Implement notification routes in `src/modules/notifications/notification.routes.ts`

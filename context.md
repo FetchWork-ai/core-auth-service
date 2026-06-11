@@ -143,6 +143,18 @@ This document summarizes the progress made so far in building the Core Auth Serv
 - **Global Error Handler**: Added `src/middleware/error-handler.ts` which standardizes error responses. Catches `DomainError` variants, Fastify schema validation errors, and logs unhandled exceptions securely (returning generic 500 without leaking stack traces).
 - **Token Blocklist**: Upgraded `JwtService` to use `ioredis` for true stateful token revocation. `isRevoked` checks Redis via `EXISTS bl_<jti>`, and `revokeToken` sets a Redis key with an expiration (`EX`) equal to the token's remaining TTL, automatically cleaning up expired blocklist entries.
 
+### 16. Testing
+- **Vitest Configuration**: `vitest.config.ts` — Node environment, global imports, 15s timeout
+- **Unit Tests**:
+  - `src/infrastructure/security/__tests__/hash.test.ts` — HashService: Argon2id hashing produces valid hashes, salted (different hashes per call), correct password verification, wrong password rejection (4 tests)
+  - `src/infrastructure/security/__tests__/otp.test.ts` — OtpService: 6-digit code generation, 10-minute expiry, deterministic HMAC-SHA256 hashing, different hashes for different codes/emails, unique codes across calls (8 tests)
+  - `src/modules/knowledge-base/__tests__/kb-merge.test.ts` — KnowledgeBaseService deep merge: scalar overwrite, array concatenation/deduplication, nested object recursive merge, new key addition, existing key preservation, edge cases (empty objects, deeply nested) (10 tests)
+- **Integration Tests**:
+  - `src/modules/auth/__tests__/auth-lifecycle.test.ts` — AuthService with mocked repos: signup success, duplicate email conflict, OTP verification with user activation, invalid OTP rejection, max attempts exceeded, signin success, wrong password, PENDING_VERIFICATION rejection, non-existent user (9 tests)
+- **Route Tests**:
+  - `src/modules/auth/__tests__/auth-routes.test.ts` — Fastify injection: POST /signup (201, 409, 400), POST /signin (200, 401), POST /verify-otp (200) with mocked AuthService (6 tests)
+- **Total: 37 tests, 5 test files, all passing**
+
 ---
 
 ## Next Steps
@@ -205,7 +217,11 @@ This document summarizes the progress made so far in building the Core Auth Serv
 - ✅ Implement `src/middleware/error-handler.ts` — Global error serialization
 - ✅ Add Redis integration for JWT token blocklist (replace in-memory stubs) with `ioredis`
 
-### Priority 7: Testing
-- Add unit tests for HashService, OtpService, AuthService
-- Add integration tests for signup → verify → signin lifecycle
-- Add route tests with Fastify injection
+### Priority 7: Testing (COMPLETED ✅)
+- ✅ Add vitest configuration (`vitest.config.ts`)
+- ✅ Unit tests for HashService (4 tests) — Argon2id hashing and verification
+- ✅ Unit tests for OtpService (8 tests) — code generation, HMAC hashing, uniqueness
+- ✅ Unit tests for KB deep merge (10 tests) — scalar overwrite, array dedup, nested merge, edge cases
+- ✅ Integration tests for signup → verify → signin lifecycle (9 tests) — mocked repositories
+- ✅ Route tests with Fastify injection (6 tests) — POST /signup, /signin, /verify-otp
+- ✅ **37 tests total, 5 test files, all passing**

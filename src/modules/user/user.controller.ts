@@ -62,39 +62,6 @@ export class UserController {
     });
   }
 
-  // Admin-only: change any user's role
-  async changeUserRole(
-    request: FastifyRequest<{ Params: { id: string }; Body: { roles: string } }>,
-    reply: FastifyReply
-  ) {
-    const targetUserId = request.params.id;
-    const { roles } = request.body;
-
-    const result = await this.userService.updateUser(targetUserId, { roles: roles as any });
-
-    if (result.isErr()) {
-      const error = result.error;
-      if (error instanceof NotFoundError) {
-        return reply.status(404).send({
-          error: error.code,
-          message: error.message,
-        });
-      }
-      return reply.status(500).send({
-        error: 'INTERNAL_ERROR',
-        message: 'Failed to update user role',
-      });
-    }
-
-    const user = result.value;
-    return reply.send({
-      id: user.id,
-      email: user.email,
-      roles: [user.roles],
-      updatedAt: user.updatedAt.toISOString(),
-    });
-  }
-
   async deleteCurrentUser(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.currentUser.id;
 

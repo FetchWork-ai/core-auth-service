@@ -1,4 +1,4 @@
-import { PrismaClient, User, UserStatus } from '@prisma/client';
+import { PrismaClient, User, UserStatus, Prisma } from '@prisma/client';
 import { Result } from '../../shared/result.js';
 import { NotFoundError, ConflictError } from '../../shared/errors.js';
 
@@ -109,6 +109,64 @@ export class UserRepository {
       return Result.ok(undefined);
     } catch (error) {
       return Result.err(new NotFoundError('User not found'));
+    }
+  }
+
+  async findMany(params: {
+    skip?: number;
+    take?: number;
+    where?: Prisma.UserWhereInput;
+    orderBy?: Prisma.UserOrderByWithRelationInput;
+  }): Promise<Result<User[], Error>> {
+    try {
+      const users = await this.prisma.user.findMany({
+        skip: params.skip,
+        take: params.take,
+        where: params.where,
+        orderBy: params.orderBy,
+      });
+      return Result.ok(users);
+    } catch (error) {
+      return Result.err(error as Error);
+    }
+  }
+
+  async count(where?: Prisma.UserWhereInput): Promise<Result<number, Error>> {
+    try {
+      const count = await this.prisma.user.count({ where });
+      return Result.ok(count);
+    } catch (error) {
+      return Result.err(error as Error);
+    }
+  }
+
+  async getStats(): Promise<Result<any, Error>> {
+    try {
+      const [totalUsers, statusCounts, roleCounts] = await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.user.groupBy({
+          by: ['status'],
+          _count: { status: true },
+        }),
+        this.prisma.user.groupBy({
+          by: ['roles'],
+          _count: { roles: true },
+        }),
+      ]);
+
+      return Result.ok({
+        totalUsers,
+        statusCounts: statusCounts.reduce((acc, curr) => {
+          acc[curr.status] = curr._count.status;
+          return acc;
+        }, {} as Record<string, number>),
+        roleCounts: roleCounts.reduce((acc, curr) => {
+          acc[curr.roles] = curr._count.roles;
+          return acc;
+        }, {} as Record<string, number>),
+      });
+    } catch (error) {
+      return Result.err(error as Error);
     }
   }
 }

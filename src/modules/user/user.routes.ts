@@ -108,63 +108,6 @@ export async function userRoutes(
     }
   );
 
-  // PATCH /api/v1/users/:id/role - Admin-only role change
-  fastify.patch(
-    '/users/:id/role',
-    {
-      preHandler: [authenticateMiddleware, authorize(['ADMIN'])],
-      schema: {
-        description: 'Change a user\'s role (ADMIN only)',
-        tags: ['Users - Admin'],
-        security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', format: 'uuid' },
-          },
-          required: ['id'],
-        },
-        body: {
-          type: 'object',
-          properties: {
-            roles: {
-              type: 'string',
-              enum: ['CANDIDATE', 'RECRUITER', 'ADMIN'],
-            },
-          },
-          required: ['roles'],
-        },
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' },
-              email: { type: 'string' },
-              roles: { type: 'array', items: { type: 'string' } },
-              updatedAt: { type: 'string', format: 'date-time' }
-            }
-          },
-          403: {
-            type: 'object',
-            properties: {
-              error: { type: 'string' },
-              message: { type: 'string' }
-            }
-          },
-          404: {
-            type: 'object',
-            properties: {
-              error: { type: 'string' },
-              message: { type: 'string' }
-            }
-          }
-        }
-      },
-    },
-    async (request, reply) => {
-      return userController.changeUserRole(request as any, reply);
-    }
-  );
 
   // DELETE /api/v1/users/me - Delete current user
   fastify.delete(

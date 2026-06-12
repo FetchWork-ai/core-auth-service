@@ -32,6 +32,9 @@ import { NotificationController } from './modules/notifications/notification.con
 import { notificationRoutes } from './modules/notifications/notification.routes.js';
 import { globalErrorHandler } from './middleware/error-handler.js';
 import { logger } from './shared/logger.js';
+import { AdminService } from './modules/admin/admin.service.js';
+import { AdminController } from './modules/admin/admin.controller.js';
+import { adminRoutes } from './modules/admin/admin.routes.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -215,6 +218,17 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(notificationRoutes, {
     prefix: '/api/v1/users/me/notifications',
     notificationController,
+    jwtService,
+    userRepository,
+  });
+
+  // Admin module
+  const adminService = new AdminService(userRepository, userService);
+  const adminController = new AdminController(adminService);
+
+  await app.register(adminRoutes, {
+    prefix: '/api/v1/admin',
+    adminController,
     jwtService,
     userRepository,
   });

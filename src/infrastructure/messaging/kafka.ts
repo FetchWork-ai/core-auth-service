@@ -42,7 +42,7 @@ export class KafkaProducer {
 
     this.producer = kafka.producer({
       createPartitioner: Partitioners.DefaultPartitioner,
-      allowAutoTopicCreation: false,
+      allowAutoTopicCreation: true,
     });
 
     try {

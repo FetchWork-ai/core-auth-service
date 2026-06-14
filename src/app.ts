@@ -17,6 +17,7 @@ import { KnowledgeBaseRepository } from './modules/knowledge-base/kb.repository.
 import { NotificationPreferenceRepository } from './modules/notifications/notification.repository.js';
 import { EncryptionService } from './infrastructure/security/encryption.js';
 import { KafkaProducer } from './infrastructure/messaging/kafka.js';
+import { KafkaConsumer } from './infrastructure/messaging/kafka-consumer.js';
 import { ConsoleEmailSender, SmtpEmailSender } from './infrastructure/email/email.service.js';
 import { IOAuthProvider } from './modules/auth/oauth/oauth-provider.interface.js';
 import { GitHubProvider } from './modules/auth/oauth/github.provider.js';
@@ -146,6 +147,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Initialize Auth Service dependencies
   const encryptionService = new EncryptionService();
   const kafkaProducer = new KafkaProducer();
+  await kafkaProducer.start();
+
+  app.addHook('onClose', async () => {
+    await kafkaProducer.shutdown();
+  });
+
   const hashService = new HashService();
   const otpService = new OtpService();
   
@@ -203,6 +210,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Knowledge Base module
   const knowledgeBaseService = new KnowledgeBaseService(knowledgeBaseRepository);
   const kbController = new KnowledgeBaseController(knowledgeBaseService);
+
+  const kafkaConsumer = new KafkaConsumer(knowledgeBaseService);
+  await kafkaConsumer.start();
+
+  app.addHook('onClose', async () => {
+    await kafkaConsumer.shutdown();
+  });
 
   await app.register(kbRoutes, {
     prefix: '/api/v1/users/me/kb',

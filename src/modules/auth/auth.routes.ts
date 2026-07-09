@@ -213,13 +213,13 @@ export async function authRoutes(
     '/:provider/callback',
     {
       schema: {
-        description: 'Exchange an OAuth authorization code for JWT tokens. Supports GitHub and LinkedIn providers.',
+        description: 'Exchange an OAuth authorization code for JWT tokens. Supports GitHub provider.',
         summary: 'OAuth Callback',
         tags: ['Authentication - OAuth'],
         params: {
           type: 'object',
           properties: {
-            provider: { type: 'string', enum: ['github', 'linkedin'] },
+            provider: { type: 'string', enum: ['github'] },
           },
         },
         body: {

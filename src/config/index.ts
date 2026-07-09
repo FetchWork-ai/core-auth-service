@@ -20,9 +20,7 @@ const envSchema = z.object({
   GITHUB_CLIENT_ID: z.string(),
   GITHUB_CLIENT_SECRET: z.string(),
   GITHUB_REDIRECT_URI: z.string().url(),
-  LINKEDIN_CLIENT_ID: z.string(),
-  LINKEDIN_CLIENT_SECRET: z.string(),
-  LINKEDIN_REDIRECT_URI: z.string().url(),
+
   // SMTP Configuration
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),

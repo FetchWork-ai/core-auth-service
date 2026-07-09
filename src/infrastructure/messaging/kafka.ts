@@ -14,6 +14,8 @@ interface EventPayloads {
     userId: string;
     provider: string;
     providerAccessToken: string;
+    linkedinProfileUrl?: string;
+    githubProfileUrl?: string;
   };
   [EventName.UserDeleted]: { userId: string };
   [EventName.PreferencesUpdated]: { userId: string };

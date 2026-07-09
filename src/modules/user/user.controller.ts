@@ -84,6 +84,22 @@ export class UserController {
     return reply.status(204).send();
   }
 
+  async submitProfileLinks(request: FastifyRequest<{ Body: { linkedinUrl?: string; githubUrl?: string } }>, reply: FastifyReply) {
+    const userId = request.currentUser.id;
+    const { linkedinUrl, githubUrl } = request.body;
+
+    const result = await this.userService.submitProfileLinks(userId, linkedinUrl, githubUrl);
+
+    if (result.isErr()) {
+      return reply.status(404).send({
+        error: result.error.code,
+        message: result.error.message,
+      });
+    }
+
+    return reply.status(202).send({ message: 'Profile enrichment triggered' });
+  }
+
   private serializeUserProfile(profile: UserProfile) {
     return {
       id: profile.id,

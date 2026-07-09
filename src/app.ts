@@ -21,7 +21,7 @@ import { KafkaConsumer } from './infrastructure/messaging/kafka-consumer.js';
 import { ConsoleEmailSender, SmtpEmailSender } from './infrastructure/email/email.service.js';
 import { IOAuthProvider } from './modules/auth/oauth/oauth-provider.interface.js';
 import { GitHubProvider } from './modules/auth/oauth/github.provider.js';
-import { LinkedInProvider } from './modules/auth/oauth/linkedin.provider.js';
+
 import { AuthService } from './modules/auth/auth.service.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
@@ -50,7 +50,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     openapi: {
       info: {
         title: 'Core Auth Service API',
-        description: 'API documentation for Core Auth Service — supports OAuth (GitHub, LinkedIn) and Email/Password with OTP verification.',
+        description: 'API documentation for Core Auth Service — supports OAuth (GitHub) and Email/Password with OTP verification.',
         version: '1.0.0'
       },
       servers: [{
@@ -59,7 +59,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       tags: [
         { name: 'System', description: 'Health check and system endpoints' },
         { name: 'Authentication - Email/Password', description: 'Email/password registration, sign-in, and OTP verification' },
-        { name: 'Authentication - OAuth', description: 'OAuth provider authentication (GitHub, LinkedIn)' },
+        { name: 'Authentication - OAuth', description: 'OAuth provider authentication (GitHub)' },
         { name: 'Authentication - Token Management', description: 'JWT token refresh and management' },
         { name: 'Users', description: 'User profile management' },
       ],
@@ -130,12 +130,21 @@ export async function buildApp(): Promise<FastifyInstance> {
   const notificationPreferenceRepository = new NotificationPreferenceRepository(prisma);
   const otpRepository = new OtpRepository(prisma);
 
+  // Initialize KafkaProducer early for UserService
+  const kafkaProducer = new KafkaProducer();
+  await kafkaProducer.start();
+
+  app.addHook('onClose', async () => {
+    await kafkaProducer.shutdown();
+  });
+
   // Initialize services
   const userService = new UserService(
     userRepository,
     oauthConnectionRepository,
     knowledgeBaseRepository,
-    notificationPreferenceRepository
+    notificationPreferenceRepository,
+    kafkaProducer
   );
 
   // Initialize controllers
@@ -146,12 +155,6 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Initialize Auth Service dependencies
   const encryptionService = new EncryptionService();
-  const kafkaProducer = new KafkaProducer();
-  await kafkaProducer.start();
-
-  app.addHook('onClose', async () => {
-    await kafkaProducer.shutdown();
-  });
 
   const hashService = new HashService();
   const otpService = new OtpService();
@@ -177,7 +180,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   
   const providers = new Map<string, IOAuthProvider>();
   providers.set('GITHUB', new GitHubProvider());
-  providers.set('LINKEDIN', new LinkedInProvider());
 
   const authService = new AuthService(
     providers,

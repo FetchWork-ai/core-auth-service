@@ -99,13 +99,6 @@ export class AuthService {
     // 4. Send verification email
     await this.emailSender.sendVerificationEmail(email, otp.code);
 
-    // 5. Publish Kafka event
-    await this.kafka.publish(EventName.ProfileEnrichmentTriggered, {
-      userId: userResult.value.id,
-      provider: 'EMAIL',
-      providerAccessToken: '',
-    });
-
     return Result.ok({
       message: 'User registered successfully. Verification code sent to email.',
       email,

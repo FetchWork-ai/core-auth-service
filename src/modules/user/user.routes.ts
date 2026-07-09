@@ -137,4 +137,42 @@ export async function userRoutes(
       return userController.deleteCurrentUser(request, reply);
     }
   );
+
+  // POST /api/v1/users/me/profile-links - Submit profile links for enrichment
+  fastify.post(
+    '/users/me/profile-links',
+    {
+      preHandler: authenticateMiddleware,
+      schema: {
+        description: 'Submit LinkedIn and/or GitHub profile links to trigger profile enrichment',
+        tags: ['Users'],
+        security: [{ bearerAuth: [] }],
+        body: {
+          type: 'object',
+          properties: {
+            linkedinUrl: { type: 'string', format: 'uri' },
+            githubUrl: { type: 'string', format: 'uri' }
+          }
+        },
+        response: {
+          202: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' }
+            }
+          },
+          404: {
+            type: 'object',
+            properties: {
+              error: { type: 'string' },
+              message: { type: 'string' }
+            }
+          }
+        }
+      },
+    },
+    async (request, reply) => {
+      return userController.submitProfileLinks(request as any, reply);
+    }
+  );
 }

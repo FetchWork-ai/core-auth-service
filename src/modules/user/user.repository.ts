@@ -91,6 +91,18 @@ export class UserRepository {
     }
   }
 
+  async updateProfileUrls(id: string, linkedinProfileUrl?: string, githubProfileUrl?: string): Promise<Result<User, NotFoundError>> {
+    try {
+      const user = await this.prisma.user.update({
+        where: { id },
+        data: { linkedinProfileUrl, githubProfileUrl },
+      });
+      return Result.ok(user);
+    } catch (error) {
+      return Result.err(new NotFoundError('User not found'));
+    }
+  }
+
   async updatePassword(id: string, passwordHash: string): Promise<Result<User, NotFoundError>> {
     try {
       const user = await this.prisma.user.update({

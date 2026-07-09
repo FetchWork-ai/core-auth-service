@@ -5,6 +5,7 @@ import { UserRepository } from './user.repository.js';
 import { OAuthConnectionRepository } from '../auth/oauth/oauth-connection.repository.js';
 import { KnowledgeBaseRepository } from '../knowledge-base/kb.repository.js';
 import { NotificationPreferenceRepository } from '../notifications/notification.repository.js';
+import { KafkaProducer, EventName } from '../../infrastructure/messaging/kafka.js';
 
 export interface UserProfile {
   id: string;
@@ -28,7 +29,8 @@ export class UserService {
     private readonly userRepo: UserRepository,
     private readonly oauthConnRepo: OAuthConnectionRepository,
     private readonly kbRepo: KnowledgeBaseRepository,
-    private readonly notificationPrefRepo: NotificationPreferenceRepository
+    private readonly notificationPrefRepo: NotificationPreferenceRepository,
+    private readonly kafkaProducer: KafkaProducer
   ) {}
 
   async getCurrentUser(userId: string): Promise<Result<UserProfile, NotFoundError>> {
@@ -81,5 +83,25 @@ export class UserService {
 
     const result = await this.userRepo.delete(userId);
     return result;
+  }
+
+  async submitProfileLinks(userId: string, linkedinUrl?: string, githubUrl?: string): Promise<Result<void, NotFoundError>> {
+    const userResult = await this.userRepo.findById(userId);
+    if (userResult.isErr() || !userResult.value) {
+      return Result.err(new NotFoundError('User not found'));
+    }
+
+    // Save into database
+    await this.userRepo.updateProfileUrls(userId, linkedinUrl, githubUrl);
+
+    await this.kafkaProducer.publish(EventName.ProfileEnrichmentTriggered, {
+      userId,
+      provider: 'MANUAL',
+      providerAccessToken: '',
+      linkedinProfileUrl: linkedinUrl,
+      githubProfileUrl: githubUrl,
+    });
+
+    return Result.ok(undefined);
   }
 }

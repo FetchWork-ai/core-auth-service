@@ -51,7 +51,7 @@ services:
       KAFKA_PROCESS_ROLES: broker,controller
       # Confluent uses 0.0.0.0 instead of empty colons
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:9094
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://core-auth-kafka:9092,EXTERNAL://localhost:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -70,6 +70,14 @@ services:
         limits:
           memory: 1G
           cpus: '1.0'
+    networks:
+      - default
+      - platform-net
 
 volumes:
   postgres_data:
+
+networks:
+  platform-net:
+    name: platform-net
+    driver: bridge

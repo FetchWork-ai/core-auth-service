@@ -2,7 +2,6 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from './auth.service.js';
 import { OAuthCallbackDto } from './oauth/oauth-provider.interface.js';
 import {
-  ConflictError,
   InvalidCredentialsError,
   UserNotVerifiedError,
   InvalidOtpError,
@@ -25,10 +24,8 @@ export class AuthController {
     if (result.isErr()) {
       const error = result.error;
 
-      if (error instanceof ConflictError) {
-        return reply.status(409).send({ error: error.code, message: error.message });
-      }
-
+      // No 409 branch by design: an already-registered email returns the same 201
+      // as a fresh one, and the account holder is notified by email instead.
       return reply.status(400).send({ error: error.code, message: error.message });
     }
 

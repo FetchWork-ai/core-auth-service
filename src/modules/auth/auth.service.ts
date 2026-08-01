@@ -67,8 +67,22 @@ export class AuthService {
 
   // ── Email/Password Sign-Up ──────────────────────────────────────────────
 
+  /**
+   * Answers identically whether or not the email is already registered.
+   *
+   * Returning 409 here handed out a free account-existence oracle and undid the
+   * anti-enumeration handling in requestPasswordReset and resendOtp. The account
+   * holder learns what happened by email instead — see notifyExistingAccount.
+   */
   async signup(email: string, password: string): Promise<Result<{ message: string; email: string }, DomainError>> {
-    // 1. Hash password
+    const genericResponse = {
+      message: 'Registration received. Check your email to continue.',
+      email,
+    };
+
+    // 1. Hash password. Done before the existence check so both branches pay the
+    //    same argon2 cost — otherwise the response time leaks what the status code
+    //    no longer does.
     const hashResult = await this.hashService.hash(password);
     if (hashResult.isErr()) {
       return Result.err(new AuthError('Failed to hash password'));
@@ -81,6 +95,10 @@ export class AuthService {
     });
 
     if (userResult.isErr()) {
+      if (userResult.error instanceof ConflictError) {
+        await this.notifyExistingAccount(email);
+        return Result.ok(genericResponse);
+      }
       return Result.err(userResult.error as DomainError);
     }
 
@@ -100,10 +118,37 @@ export class AuthService {
     // 4. Send verification email
     await this.emailSender.sendVerificationEmail(email, otp.code);
 
-    return Result.ok({
-      message: 'User registered successfully. Verification code sent to email.',
-      email,
-    });
+    return Result.ok(genericResponse);
+  }
+
+  /**
+   * Tells the real account holder that a signup was attempted on their address.
+   *
+   * An account still pending verification gets a fresh code rather than a notice —
+   * otherwise a user whose first email went missing would re-register, be told to
+   * check their inbox, and find nothing there.
+   */
+  private async notifyExistingAccount(email: string): Promise<void> {
+    const existing = await this.userRepo.findByEmail(email);
+    if (existing.isErr() || !existing.value) {
+      return;
+    }
+
+    if (existing.value.status === 'PENDING_VERIFICATION') {
+      const otp = this.otpService.generate(email);
+      const saved = await this.otpRepo.save({
+        email,
+        codeHash: otp.codeHash,
+        purpose: 'EMAIL_VERIFICATION',
+        expiresAt: otp.expiresAt,
+      });
+      if (saved.isOk()) {
+        await this.emailSender.sendVerificationEmail(email, otp.code);
+      }
+      return;
+    }
+
+    await this.emailSender.sendExistingAccountNotice(email);
   }
 
   // ── OTP Verification ────────────────────────────────────────────────────

@@ -5,6 +5,11 @@ import nodemailer from 'nodemailer';
 export interface IEmailSender {
   sendVerificationEmail(email: string, code: string): Promise<Result<void, Error>>;
   sendPasswordResetEmail(email: string, code: string): Promise<Result<void, Error>>;
+  /**
+   * Sent when someone tries to register an email that already has an account.
+   * Signup answers 201 either way, so this is what tells the real owner what happened.
+   */
+  sendExistingAccountNotice(email: string): Promise<Result<void, Error>>;
 }
 
 export class ConsoleEmailSender implements IEmailSender {
@@ -17,6 +22,11 @@ export class ConsoleEmailSender implements IEmailSender {
 
   async sendPasswordResetEmail(email: string, _code: string): Promise<Result<void, Error>> {
     this.logger.info({ recipient: this.maskEmail(email) }, '📧 [PASSWORD RESET OTP] SENT');
+    return Result.ok(undefined);
+  }
+
+  async sendExistingAccountNotice(email: string): Promise<Result<void, Error>> {
+    this.logger.info({ recipient: this.maskEmail(email) }, '📧 [EXISTING ACCOUNT NOTICE] SENT');
     return Result.ok(undefined);
   }
 
@@ -83,6 +93,29 @@ export class SmtpEmailSender implements IEmailSender {
       return Result.ok(undefined);
     } catch (error) {
       this.logger.error({ err: error, recipient: this.maskEmail(email) }, 'Failed to send password reset email via SMTP');
+      return Result.err(error as Error);
+    }
+  }
+
+  async sendExistingAccountNotice(email: string): Promise<Result<void, Error>> {
+    try {
+      this.logger.info({ recipient: this.maskEmail(email) }, 'Sending existing-account notice via SMTP');
+      await this.transporter.sendMail({
+        from: this.from,
+        to: email,
+        subject: 'You already have an account',
+        text:
+          'Someone tried to register an account with this email address, but one already exists. ' +
+          'If that was you, sign in instead — or reset your password if you have forgotten it. ' +
+          'If it was not you, no action is needed; your account is unchanged.',
+        html:
+          '<p>Someone tried to register an account with this email address, but one already exists.</p>' +
+          '<p>If that was you, sign in instead — or reset your password if you have forgotten it.</p>' +
+          '<p>If it was not you, no action is needed; your account is unchanged.</p>',
+      });
+      return Result.ok(undefined);
+    } catch (error) {
+      this.logger.error({ err: error, recipient: this.maskEmail(email) }, 'Failed to send existing-account notice via SMTP');
       return Result.err(error as Error);
     }
   }

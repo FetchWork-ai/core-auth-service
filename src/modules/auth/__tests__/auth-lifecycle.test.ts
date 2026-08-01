@@ -64,6 +64,7 @@ function createMockEmailSender() {
   return {
     sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
     sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined),
+    sendExistingAccountNotice: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -121,7 +122,6 @@ describe('AuthService — Signup → Verify → Signin Lifecycle', () => {
 
       expect(result.isOk()).toBe(true);
       if (result.isOk()) {
-        expect(result.value.message).toContain('registered successfully');
         expect(result.value.email).toBe('test@example.com');
       }
 
@@ -134,19 +134,95 @@ describe('AuthService — Signup → Verify → Signin Lifecycle', () => {
       expect(otpRepo.save).toHaveBeenCalled();
     });
 
-    it('should return error when email already exists', async () => {
-      const { service, userRepo } = buildAuthService();
+    it('should answer identically for a taken email and notify the account holder', async () => {
+      const { service, userRepo, emailSender } = buildAuthService();
 
       userRepo.createWithPassword.mockResolvedValue(
         Result.err(new ConflictError('Email already registered'))
       );
+      userRepo.findByEmail.mockResolvedValue(
+        Result.ok({
+          id: 'user-1',
+          email: 'existing@example.com',
+          roles: 'CANDIDATE',
+          status: 'ACTIVE',
+        })
+      );
 
-      const result = await service.signup('existing@example.com', 'Password1!');
+      const taken = await service.signup('existing@example.com', 'SecureP@ss123');
 
-      expect(result.isErr()).toBe(true);
-      if (result.isErr()) {
-        expect(result.error).toBeInstanceOf(ConflictError);
+      // Same shape a brand-new registration produces — no existence oracle
+      expect(taken.isOk()).toBe(true);
+      if (taken.isOk()) {
+        expect(taken.value.email).toBe('existing@example.com');
       }
+      expect(emailSender.sendExistingAccountNotice).toHaveBeenCalledWith('existing@example.com');
+      expect(emailSender.sendVerificationEmail).not.toHaveBeenCalled();
+    });
+
+    it('should be byte-identical between a fresh and a taken email', async () => {
+      const fresh = buildAuthService();
+      fresh.userRepo.createWithPassword.mockResolvedValue(
+        Result.ok({ id: 'user-1', email: 'a@example.com', roles: 'CANDIDATE' })
+      );
+
+      const taken = buildAuthService();
+      taken.userRepo.createWithPassword.mockResolvedValue(
+        Result.err(new ConflictError('Email already registered'))
+      );
+      taken.userRepo.findByEmail.mockResolvedValue(
+        Result.ok({ id: 'user-2', email: 'a@example.com', roles: 'CANDIDATE', status: 'ACTIVE' })
+      );
+
+      const freshResult = await fresh.service.signup('a@example.com', 'SecureP@ss123');
+      const takenResult = await taken.service.signup('a@example.com', 'SecureP@ss123');
+
+      expect(freshResult.isOk()).toBe(true);
+      expect(takenResult.isOk()).toBe(true);
+      if (freshResult.isOk() && takenResult.isOk()) {
+        expect(takenResult.value).toEqual(freshResult.value);
+      }
+    });
+
+    it('should resend a verification code when the existing account never verified', async () => {
+      const { service, userRepo, emailSender, otpRepo } = buildAuthService();
+
+      userRepo.createWithPassword.mockResolvedValue(
+        Result.err(new ConflictError('Email already registered'))
+      );
+      userRepo.findByEmail.mockResolvedValue(
+        Result.ok({
+          id: 'user-1',
+          email: 'pending@example.com',
+          roles: 'CANDIDATE',
+          status: 'PENDING_VERIFICATION',
+        })
+      );
+
+      const result = await service.signup('pending@example.com', 'SecureP@ss123');
+
+      expect(result.isOk()).toBe(true);
+      // A lost first email must not dead-end the user on a silent 201
+      expect(emailSender.sendVerificationEmail).toHaveBeenCalledWith('pending@example.com', '123456');
+      expect(emailSender.sendExistingAccountNotice).not.toHaveBeenCalled();
+      expect(otpRepo.save).toHaveBeenCalled();
+    });
+
+    it('should still hash the password before discovering the email is taken', async () => {
+      const { service, userRepo, hashService } = buildAuthService();
+
+      userRepo.createWithPassword.mockResolvedValue(
+        Result.err(new ConflictError('Email already registered'))
+      );
+      userRepo.findByEmail.mockResolvedValue(
+        Result.ok({ id: 'user-1', email: 'x@example.com', roles: 'CANDIDATE', status: 'ACTIVE' })
+      );
+
+      await service.signup('x@example.com', 'SecureP@ss123');
+
+      // Skipping argon2 on the conflict path would leak by timing what the
+      // status code no longer leaks
+      expect(hashService.hash).toHaveBeenCalledWith('SecureP@ss123');
     });
   });
 

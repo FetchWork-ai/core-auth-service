@@ -69,9 +69,14 @@ describe('Auth Routes — Fastify Injection', () => {
       expect(body.message).toContain('registered successfully');
     });
 
-    it('should return 409 when email already exists', async () => {
+    it('should return 201, not 409, for an already-registered email', async () => {
+      // The service absorbs the conflict and answers generically; the route must
+      // not reintroduce an existence oracle by mapping anything to 409.
       mockAuthService.signup.mockResolvedValue(
-        Result.err(new ConflictError('Email already registered'))
+        Result.ok({
+          message: 'Registration received. Check your email to continue.',
+          email: 'existing@example.com',
+        })
       );
 
       const response = await app.inject({
@@ -83,9 +88,8 @@ describe('Auth Routes — Fastify Injection', () => {
         },
       });
 
-      expect(response.statusCode).toBe(409);
-      const body = JSON.parse(response.body);
-      expect(body.error).toBe('CONFLICT');
+      expect(response.statusCode).toBe(201);
+      expect(JSON.parse(response.body).email).toBe('existing@example.com');
     });
 
     it('should return 400 when body is missing required fields', async () => {

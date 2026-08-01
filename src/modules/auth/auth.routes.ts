@@ -90,7 +90,8 @@ export async function authRoutes(
     {
       config: { rateLimit: perEmailRateLimit('signup', 5, '1 hour') },
       schema: {
-        description: 'Register a new user with email and password. A 6-digit OTP verification code is sent to the provided email.',
+        description:
+          'Register a new user with email and password. A 6-digit OTP verification code is sent to the provided email. Always returns 201, whether or not the email is already registered — an existing account holder is notified by email rather than the caller being told the address is taken.',
         summary: 'Email/Password Sign-Up',
         tags: ['Authentication - Email/Password'],
         body: {
@@ -103,7 +104,7 @@ export async function authRoutes(
         },
         response: {
           201: {
-            description: 'User created successfully. Verification OTP sent to email.',
+            description: 'Registration accepted. Returned identically for new and already-registered emails.',
             type: 'object',
             properties: {
               message: { type: 'string' },
@@ -112,10 +113,6 @@ export async function authRoutes(
           },
           400: {
             description: 'Bad request — validation error or password too weak',
-            ...errorResponseSchema,
-          },
-          409: {
-            description: 'Conflict — user with this email already exists',
             ...errorResponseSchema,
           },
         },

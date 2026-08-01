@@ -87,8 +87,8 @@ This document summarizes the progress made so far in building the Core Auth Serv
   - `resetPassword(email, code, newPassword)`: Verifies OTP (max 3 attempts), hashes new password (Argon2id), updates DB. Activates pending users on success
 - **AuthController**: `src/modules/auth/auth.controller.ts` — HTTP handlers with proper status code mapping (201, 400, 401, 403, 404, 409, 429)
 - **AuthRoutes**: `src/modules/auth/auth.routes.ts` — Full Swagger/OpenAPI documentation for all endpoints:
-  - `POST /api/v1/auth/signup` — Email/password registration (201, 400, 409)
-  - `POST /api/v1/auth/verify-otp` — OTP verification, returns JWT tokens (200, 400, 429)
+  - `POST /api/v1/auth/signup` — Email/password registration (201, 400). Always 201, including for an already-registered email; the account holder is notified by email instead
+  - `POST /api/v1/auth/verify-otp` — EMAIL_VERIFICATION OTP verification, returns JWT tokens (200, 400, 401, 429)
   - `POST /api/v1/auth/signin` — Email/password sign-in (200, 401, 403)
   - `POST /api/v1/auth/otp/resend` — Resend OTP with 60s cooldown (200, 429)
   - `POST /api/v1/auth/:provider/callback` — OAuth callback (200, 400)

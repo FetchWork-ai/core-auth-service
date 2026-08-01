@@ -235,6 +235,64 @@ describe('AuthService — Signup → Verify → Signin Lifecycle', () => {
       expect(result.isErr()).toBe(true);
       expect(otpRepo.delete).toHaveBeenCalledWith('otp-1');
     });
+
+    it('should not issue tokens for a PASSWORD_RESET code', async () => {
+      const { service, otpRepo, jwt } = buildAuthService();
+
+      const result = await service.verifyOtp('test@example.com', '123456', 'PASSWORD_RESET' as any);
+
+      expect(result.isErr()).toBe(true);
+      if (result.isErr()) {
+        expect(result.error.code).toBe('UNSUPPORTED_OTP_PURPOSE');
+      }
+      // Rejected before the OTP is ever looked up — no session is minted
+      expect(otpRepo.findActive).not.toHaveBeenCalled();
+      expect(jwt.signAccess).not.toHaveBeenCalled();
+      expect(jwt.signRefresh).not.toHaveBeenCalled();
+    });
+
+    it('should not issue tokens for an MFA code', async () => {
+      const { service, jwt } = buildAuthService();
+
+      const result = await service.verifyOtp('test@example.com', '123456', 'MFA' as any);
+
+      expect(result.isErr()).toBe(true);
+      expect(jwt.signAccess).not.toHaveBeenCalled();
+    });
+
+    it('should reject a suspended user holding a valid OTP', async () => {
+      const { service, userRepo, otpRepo, jwt } = buildAuthService();
+
+      otpRepo.findActive.mockResolvedValue(
+        Result.ok({
+          id: 'otp-1',
+          email: 'test@example.com',
+          codeHash: 'hashed-otp',
+          purpose: 'EMAIL_VERIFICATION',
+          attempts: 0,
+          expiresAt: new Date(Date.now() + 600000),
+          createdAt: new Date(),
+        })
+      );
+
+      userRepo.findByEmail.mockResolvedValue(
+        Result.ok({
+          id: 'user-1',
+          email: 'test@example.com',
+          roles: 'CANDIDATE',
+          status: 'SUSPENDED',
+        })
+      );
+
+      const result = await service.verifyOtp('test@example.com', '123456', 'EMAIL_VERIFICATION');
+
+      expect(result.isErr()).toBe(true);
+      if (result.isErr()) {
+        expect(result.error.code).toBe('UNAUTHORIZED');
+      }
+      expect(userRepo.updateStatus).not.toHaveBeenCalled();
+      expect(jwt.signAccess).not.toHaveBeenCalled();
+    });
   });
 
   // ── Signin ──────────────────────────────────────────────────────

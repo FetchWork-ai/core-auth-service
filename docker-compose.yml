@@ -4,6 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: core-auth-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: devuser
       POSTGRES_PASSWORD: devpassword
@@ -27,6 +28,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: core-auth-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -44,6 +46,7 @@ services:
     # Switched to the highly stable Confluent image
     image: confluentinc/cp-kafka:latest
     container_name: core-auth-kafka
+    restart: unless-stopped
     ports:
       - "9094:9094"
     environment:

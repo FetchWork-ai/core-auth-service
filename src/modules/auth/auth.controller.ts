@@ -8,6 +8,7 @@ import {
   InvalidOtpError,
   MaxOtpAttemptsExceededError,
   OtpCooldownError,
+  UnauthorizedError,
   NotFoundError,
 } from '../../shared/errors.js';
 
@@ -50,6 +51,10 @@ export class AuthController {
 
       if (error instanceof MaxOtpAttemptsExceededError) {
         return reply.status(429).send({ error: error.code, message: error.message });
+      }
+
+      if (error instanceof UnauthorizedError) {
+        return reply.status(401).send({ error: error.code, message: error.message });
       }
 
       return reply.status(400).send({ error: error.code, message: error.message });

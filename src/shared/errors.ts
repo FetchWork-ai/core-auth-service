@@ -86,6 +86,15 @@ export class MaxOtpAttemptsExceededError extends DomainError {
   }
 }
 
+export class UnsupportedOtpPurposeError extends DomainError {
+  constructor(purpose: string) {
+    super(
+      `OTP purpose ${purpose} cannot be verified at this endpoint`,
+      'UNSUPPORTED_OTP_PURPOSE'
+    );
+  }
+}
+
 export class OtpCooldownError extends DomainError {
   constructor(message = 'Please wait before requesting a new OTP.') {
     super(message, 'OTP_COOLDOWN');

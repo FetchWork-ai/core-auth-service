@@ -10,8 +10,13 @@ export class OtpService {
   private readonly EXPIRY_MINUTES = 10;
   private readonly SALT_SECRET: string;
 
-  constructor() {
-    this.SALT_SECRET = process.env.OTP_SALT_SECRET ?? 'fallback-otp-salt';
+  // The salt must be injected — never defaulted. A fallback value would make every
+  // OTP hash forgeable from public source if the secret were missing in production.
+  constructor(saltSecret: string) {
+    if (!saltSecret || saltSecret.length < 16) {
+      throw new Error('OtpService requires a salt secret of at least 16 characters');
+    }
+    this.SALT_SECRET = saltSecret;
   }
 
   generate(email: string): GeneratedOtp {

@@ -14,7 +14,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().url().optional(),
   KAFKA_BROKERS: z.string().transform((str) => str.split(',')),
   JWT_SECRET: z.string().min(32),
-  OTP_SALT_SECRET: z.string().min(16).default('fallback-otp-salt-secret'),
+  OTP_SALT_SECRET: z.string().min(16),
   ENCRYPTION_KEY: z.string().min(32).default('default-key-for-development-only-32b'),
   // OAuth
   GITHUB_CLIENT_ID: z.string(),

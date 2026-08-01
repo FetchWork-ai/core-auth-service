@@ -157,7 +157,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const encryptionService = new EncryptionService();
 
   const hashService = new HashService();
-  const otpService = new OtpService();
+  const otpService = new OtpService(config.OTP_SALT_SECRET);
   
   let emailSender;
   if (

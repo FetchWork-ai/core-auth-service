@@ -26,6 +26,7 @@ import {
   InvalidOtpError,
   MaxOtpAttemptsExceededError,
   OtpCooldownError,
+  UnsupportedOtpPurposeError,
   NotFoundError,
 } from '../../shared/errors.js';
 
@@ -112,6 +113,14 @@ export class AuthService {
     code: string,
     purpose: 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'MFA'
   ): Promise<Result<AuthResult, DomainError>> {
+    // 0. Only email verification exchanges an OTP for a session here.
+    //    PASSWORD_RESET codes are redeemed at /password-reset (which requires a new
+    //    password); MFA is not implemented and has no first-factor proof to build on.
+    //    Issuing tokens for either would turn those flows into a password-less login.
+    if (purpose !== 'EMAIL_VERIFICATION') {
+      return Result.err(new UnsupportedOtpPurposeError(purpose));
+    }
+
     // 1. Find active OTP
     const otpResult = await this.otpRepo.findActive(email, purpose);
     if (otpResult.isErr()) {
@@ -147,12 +156,15 @@ export class AuthService {
 
     const user = userResult.value;
 
-    // 6. If this is email verification, activate the user
-    if (purpose === 'EMAIL_VERIFICATION') {
-      await this.userRepo.updateStatus(user.id, 'ACTIVE');
+    // 6. Suspended accounts must not be able to verify their way back into a session
+    if (user.status === 'SUSPENDED') {
+      return Result.err(new UnauthorizedError('Account has been suspended'));
     }
 
-    // 7. Issue tokens
+    // 7. Activate the user
+    await this.userRepo.updateStatus(user.id, 'ACTIVE');
+
+    // 8. Issue tokens
     const accessToken = await this.jwt.signAccess({ sub: user.id, roles: [user.roles] });
     const refreshToken = await this.jwt.signRefresh({ sub: user.id });
 

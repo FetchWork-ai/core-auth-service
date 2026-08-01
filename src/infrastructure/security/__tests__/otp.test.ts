@@ -2,7 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { OtpService } from '../otp.js';
 
 describe('OtpService', () => {
-  const otpService = new OtpService();
+  const otpService = new OtpService('test-otp-salt-secret');
+
+  describe('constructor()', () => {
+    it('should reject a missing or too-short salt secret', () => {
+      expect(() => new OtpService('')).toThrow();
+      expect(() => new OtpService('too-short')).toThrow();
+    });
+  });
 
   describe('generate()', () => {
     it('should produce a 6-digit numeric code', () => {

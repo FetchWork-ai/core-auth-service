@@ -91,7 +91,7 @@ export async function authRoutes(
     '/verify-otp',
     {
       schema: {
-        description: 'Verify a 6-digit OTP code sent via email. On success for EMAIL_VERIFICATION purpose, the user status is set to ACTIVE and JWT tokens are returned.',
+        description: 'Verify a 6-digit EMAIL_VERIFICATION OTP code sent via email. On success the user status is set to ACTIVE and JWT tokens are returned. PASSWORD_RESET codes are not accepted here — redeem them at POST /password-reset, which requires a new password.',
         summary: 'Verify Email OTP',
         tags: ['Authentication - Email/Password'],
         body: {
@@ -102,8 +102,8 @@ export async function authRoutes(
             code: { type: 'string', minLength: 6, maxLength: 6, description: '6-digit OTP code' },
             purpose: {
               type: 'string',
-              enum: ['EMAIL_VERIFICATION', 'PASSWORD_RESET', 'MFA'],
-              description: 'Purpose of the OTP verification',
+              enum: ['EMAIL_VERIFICATION'],
+              description: 'Purpose of the OTP verification. Only EMAIL_VERIFICATION exchanges an OTP for a session.',
             },
           },
         },
@@ -113,7 +113,11 @@ export async function authRoutes(
             ...authTokenResponseSchema,
           },
           400: {
-            description: 'Invalid or expired OTP',
+            description: 'Invalid or expired OTP, or an OTP purpose that cannot be verified here',
+            ...errorResponseSchema,
+          },
+          401: {
+            description: 'Account has been suspended',
             ...errorResponseSchema,
           },
           429: {

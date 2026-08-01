@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
 import { AuthController } from './auth.controller.js';
 
 export interface AuthRoutesOptions {
@@ -6,6 +6,50 @@ export interface AuthRoutesOptions {
 }
 
 // ── Shared schema definitions ───────────────────────────────────────────────
+
+// Enforces what the description has always claimed: lower, upper, digit, symbol.
+// The upper bound keeps an attacker from burning CPU on megabyte-long argon2 inputs.
+const PASSWORD_PATTERN = '^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{8,128}$';
+const PASSWORD_RULES =
+  'Minimum 8 characters (max 128) and must contain an uppercase letter, a lowercase letter, a number, and a special character';
+
+const passwordSchema = {
+  type: 'string',
+  minLength: 8,
+  maxLength: 128,
+  pattern: PASSWORD_PATTERN,
+  description: PASSWORD_RULES,
+};
+
+/**
+ * Per-email rate limit for the OTP endpoints.
+ *
+ * The global bucket is keyed by IP, which a distributed attacker sidesteps for free.
+ * Keying by the email in the body caps how many codes can be minted for — and guessed
+ * against — a single account, closing the "3 attempts, but attempts reset with every
+ * new code" cycle. Runs at preValidation so the parsed body is available; the payload
+ * is untrusted at that point, hence the type guard and the IP fallback.
+ */
+function perEmailRateLimit(label: string, max: number, timeWindow: string) {
+  return {
+    max,
+    timeWindow,
+    hook: 'preValidation' as const,
+    keyGenerator: (req: FastifyRequest) => {
+      const email = (req.body as { email?: unknown } | undefined)?.email;
+      return typeof email === 'string'
+        ? `${label}:email:${email.trim().toLowerCase()}`
+        : `${label}:ip:${req.ip}`;
+    },
+    // The plugin *throws* whatever this returns, so statusCode must be carried
+    // through — omit it and Fastify serialises the rejection as a 500.
+    errorResponseBuilder: (_req: FastifyRequest, context: { statusCode: number }) => ({
+      statusCode: context.statusCode,
+      error: 'RATE_LIMITED',
+      message: 'Too many requests for this account. Please try again later.',
+    }),
+  };
+}
 
 const errorResponseSchema = {
   type: 'object',
@@ -44,6 +88,7 @@ export async function authRoutes(
   fastify.post(
     '/signup',
     {
+      config: { rateLimit: perEmailRateLimit('signup', 5, '1 hour') },
       schema: {
         description: 'Register a new user with email and password. A 6-digit OTP verification code is sent to the provided email.',
         summary: 'Email/Password Sign-Up',
@@ -53,11 +98,7 @@ export async function authRoutes(
           required: ['email', 'password'],
           properties: {
             email: { type: 'string', format: 'email', description: 'User email address' },
-            password: {
-              type: 'string',
-              minLength: 8,
-              description: 'Password (min 8 characters, should contain uppercase, lowercase, number, and special character)',
-            },
+            password: passwordSchema,
           },
         },
         response: {
@@ -90,6 +131,7 @@ export async function authRoutes(
   fastify.post(
     '/verify-otp',
     {
+      config: { rateLimit: perEmailRateLimit('verify-otp', 10, '1 hour') },
       schema: {
         description: 'Verify a 6-digit EMAIL_VERIFICATION OTP code sent via email. On success the user status is set to ACTIVE and JWT tokens are returned. PASSWORD_RESET codes are not accepted here — redeem them at POST /password-reset, which requires a new password.',
         summary: 'Verify Email OTP',
@@ -175,6 +217,7 @@ export async function authRoutes(
   fastify.post(
     '/otp/resend',
     {
+      config: { rateLimit: perEmailRateLimit('otp-resend', 5, '1 hour') },
       schema: {
         description: 'Resend a new 6-digit OTP to the specified email. Subject to a 60-second cooldown between requests. Always returns 200 to prevent email enumeration.',
         summary: 'Resend OTP',
@@ -289,11 +332,45 @@ export async function authRoutes(
     }
   );
 
+  // ── POST /signout ──────────────────────────────────────────────────────
+
+  fastify.post(
+    '/signout',
+    {
+      schema: {
+        description:
+          'Sign out by revoking the presented refresh token. If an Authorization header is supplied, that access token is revoked as well. Always returns 200 — an invalid or expired token means the caller is signed out regardless.',
+        summary: 'Sign Out',
+        tags: ['Authentication - Token Management'],
+        body: {
+          type: 'object',
+          required: ['refreshToken'],
+          properties: {
+            refreshToken: { type: 'string', description: 'JWT refresh token to revoke' },
+          },
+        },
+        response: {
+          200: {
+            description: 'Signed out',
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      return authController.signout(request, reply);
+    }
+  );
+
   // ── POST /password-reset/request ───────────────────────────────────────
 
   fastify.post(
     '/password-reset/request',
     {
+      config: { rateLimit: perEmailRateLimit('password-reset-request', 5, '1 hour') },
       schema: {
         description: 'Request a password reset OTP code. Sends an email to the user if the account exists.',
         summary: 'Request Password Reset OTP',
@@ -334,6 +411,7 @@ export async function authRoutes(
   fastify.post(
     '/password-reset',
     {
+      config: { rateLimit: perEmailRateLimit('password-reset', 10, '1 hour') },
       schema: {
         description: 'Reset password using the OTP code received via email.',
         summary: 'Reset Password',
@@ -344,7 +422,7 @@ export async function authRoutes(
           properties: {
             email: { type: 'string', format: 'email', description: 'User registered email address' },
             code: { type: 'string', minLength: 6, maxLength: 6, description: '6-digit OTP code received in email' },
-            newPassword: { type: 'string', minLength: 8, description: 'New password (minimum 8 characters)' },
+            newPassword: passwordSchema,
           },
         },
         response: {

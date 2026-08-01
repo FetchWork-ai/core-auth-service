@@ -146,6 +146,21 @@ export class AuthController {
     return reply.send(result.value);
   }
 
+  // ── Sign Out ────────────────────────────────────────────────────────────
+
+  async signout(request: FastifyRequest, reply: FastifyReply) {
+    const { refreshToken } = request.body as { refreshToken: string };
+
+    // Revoke the access token too when the client bothered to send it, otherwise
+    // it stays usable for the remainder of its 15m life.
+    const header = request.headers.authorization;
+    const accessToken = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
+
+    const result = await this.authService.signout(refreshToken, accessToken);
+
+    return reply.send(result.isOk() ? result.value : { message: 'Signed out.' });
+  }
+
   // ── Password Reset Flow ──────────────────────────────────────────────────
 
   async requestPasswordReset(request: FastifyRequest, reply: FastifyReply) {

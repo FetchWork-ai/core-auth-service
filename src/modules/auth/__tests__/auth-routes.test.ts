@@ -18,6 +18,7 @@ function createMockAuthService() {
     refreshTokens: vi.fn(),
     requestPasswordReset: vi.fn(),
     resetPassword: vi.fn(),
+    signout: vi.fn(),
   } as unknown as AuthService;
 }
 
@@ -97,6 +98,73 @@ describe('Auth Routes — Fastify Injection', () => {
       // Controller will attempt to destructure undefined and the service will handle it
       // At minimum the request should not crash
       expect([400, 500]).toContain(response.statusCode);
+    });
+
+    it.each([
+      ['password', 'no upper, digit or symbol'],
+      ['Password', 'no digit or symbol'],
+      ['Password1', 'no symbol'],
+      ['P@ss1', 'too short'],
+      ['p@ssword1', 'no uppercase'],
+      ['P@SSWORD1', 'no lowercase'],
+    ])('should reject %s (%s) before reaching the service', async (password) => {
+      mockAuthService.signup.mockClear();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/signup',
+        payload: { email: 'test@example.com', password },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(mockAuthService.signup).not.toHaveBeenCalled();
+    });
+
+    it('should reject a password over 128 characters', async () => {
+      mockAuthService.signup.mockClear();
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/signup',
+        payload: { email: 'test@example.com', password: 'A1@' + 'a'.repeat(200) },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(mockAuthService.signup).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── POST /signout ─────────────────────────────────────────────────
+
+  describe('POST /api/v1/auth/signout', () => {
+    it('should revoke the refresh token and return 200', async () => {
+      mockAuthService.signout.mockResolvedValue(Result.ok({ message: 'Signed out.' }));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/signout',
+        payload: { refreshToken: 'some-refresh-token' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockAuthService.signout).toHaveBeenCalledWith('some-refresh-token', undefined);
+    });
+
+    it('should also pass the access token when an Authorization header is present', async () => {
+      mockAuthService.signout.mockResolvedValue(Result.ok({ message: 'Signed out.' }));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/signout',
+        headers: { authorization: 'Bearer some-access-token' },
+        payload: { refreshToken: 'some-refresh-token' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockAuthService.signout).toHaveBeenCalledWith(
+        'some-refresh-token',
+        'some-access-token'
+      );
     });
   });
 

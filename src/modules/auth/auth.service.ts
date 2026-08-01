@@ -402,6 +402,42 @@ export class AuthService {
     return Result.ok({ accessToken, refreshToken: newRefreshToken });
   }
 
+  // ── Sign Out ────────────────────────────────────────────────────────────
+
+  /**
+   * Revokes the presented tokens via the existing blocklist.
+   *
+   * Deliberately always succeeds: an already-expired, malformed or unknown token
+   * means the caller is signed out either way, and reporting the difference would
+   * turn this into a token-validity oracle.
+   */
+  async signout(
+    refreshToken: string,
+    accessToken?: string
+  ): Promise<Result<{ message: string }, never>> {
+    await this.revokeIfValid(refreshToken, 'refresh');
+    if (accessToken) {
+      await this.revokeIfValid(accessToken, 'access');
+    }
+    return Result.ok({ message: 'Signed out.' });
+  }
+
+  private async revokeIfValid(token: string, kind: 'access' | 'refresh'): Promise<void> {
+    const payload =
+      kind === 'refresh'
+        ? await this.jwt.verifyRefresh(token)
+        : await this.jwt.verifyAccess(token);
+
+    if (payload.isErr() || !payload.value.jti) return;
+
+    // Hold the blocklist entry only as long as the token could still be presented
+    const exp = payload.value.exp;
+    const ttl = exp ? exp - Math.floor(Date.now() / 1000) : 0;
+    if (ttl <= 0) return;
+
+    await this.jwt.revokeToken(payload.value.jti, ttl);
+  }
+
   // ── Request Password Reset ─────────────────────────────────────────────
 
   async requestPasswordReset(email: string): Promise<Result<{ message: string }, DomainError>> {

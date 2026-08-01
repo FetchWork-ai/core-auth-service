@@ -378,4 +378,77 @@ describe('AuthService — Signup → Verify → Signin Lifecycle', () => {
       }
     });
   });
+
+  // ── Refresh ─────────────────────────────────────────────────────
+
+  describe('refreshTokens()', () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    function mockValidRefresh(jwt: any, iat = nowSeconds) {
+      jwt.verifyRefresh.mockResolvedValue(
+        Result.ok({ sub: 'user-1', jti: 'jti-1', iat, exp: nowSeconds + 604800 })
+      );
+    }
+
+    it('should rotate tokens for an active user', async () => {
+      const { service, userRepo, jwt } = buildAuthService();
+      mockValidRefresh(jwt);
+      userRepo.findById.mockResolvedValue(
+        Result.ok({
+          id: 'user-1',
+          email: 'test@example.com',
+          roles: 'CANDIDATE',
+          status: 'ACTIVE',
+          tokensValidFrom: new Date((nowSeconds - 3600) * 1000),
+        })
+      );
+
+      const result = await service.refreshTokens('some-refresh-token');
+
+      expect(result.isOk()).toBe(true);
+      expect(jwt.revokeToken).toHaveBeenCalledWith('jti-1', expect.any(Number));
+    });
+
+    it('should refuse to refresh a suspended account', async () => {
+      const { service, userRepo, jwt } = buildAuthService();
+      mockValidRefresh(jwt);
+      userRepo.findById.mockResolvedValue(
+        Result.ok({
+          id: 'user-1',
+          email: 'test@example.com',
+          roles: 'CANDIDATE',
+          status: 'SUSPENDED',
+          tokensValidFrom: new Date((nowSeconds - 3600) * 1000),
+        })
+      );
+
+      const result = await service.refreshTokens('some-refresh-token');
+
+      expect(result.isErr()).toBe(true);
+      expect(jwt.signAccess).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a token issued before the last password reset', async () => {
+      const { service, userRepo, jwt } = buildAuthService();
+      // Token minted an hour ago, password reset 5 minutes ago
+      mockValidRefresh(jwt, nowSeconds - 3600);
+      userRepo.findById.mockResolvedValue(
+        Result.ok({
+          id: 'user-1',
+          email: 'test@example.com',
+          roles: 'CANDIDATE',
+          status: 'ACTIVE',
+          tokensValidFrom: new Date((nowSeconds - 300) * 1000),
+        })
+      );
+
+      const result = await service.refreshTokens('stolen-refresh-token');
+
+      expect(result.isErr()).toBe(true);
+      if (result.isErr()) {
+        expect(result.error.message).toMatch(/invalidated/i);
+      }
+      expect(jwt.signAccess).not.toHaveBeenCalled();
+    });
+  });
 });

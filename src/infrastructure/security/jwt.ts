@@ -15,6 +15,21 @@ export interface JwtPayload {
   jti?: string;
 }
 
+/**
+ * True when a token predates the user's token epoch (bumped on password reset).
+ *
+ * `iat` is whole seconds, so the epoch is floored to the same resolution — a token
+ * minted in the same second as the bump is kept rather than spuriously rejected.
+ */
+export function isIssuedBeforeEpoch(
+  payload: JwtPayload,
+  tokensValidFrom: Date | null | undefined
+): boolean {
+  if (!tokensValidFrom) return false;
+  if (payload.iat === undefined) return true; // unstamped token can't be placed — reject
+  return payload.iat < Math.floor(tokensValidFrom.getTime() / 1000);
+}
+
 export class JwtService {
   private accessTokenSecret: Uint8Array;
   private refreshTokenSecret: Uint8Array;

@@ -2,7 +2,7 @@ import { Result } from '../../shared/result.js';
 import { UserRepository } from '../user/user.repository.js';
 import { OAuthConnectionRepository } from './oauth/oauth-connection.repository.js';
 import { EncryptionService } from '../../infrastructure/security/encryption.js';
-import { JwtService } from '../../infrastructure/security/jwt.js';
+import { JwtService, isIssuedBeforeEpoch } from '../../infrastructure/security/jwt.js';
 import { KafkaProducer, EventName } from '../../infrastructure/messaging/kafka.js';
 import { HashService } from '../../infrastructure/security/hash.js';
 import { OtpService } from '../../infrastructure/security/otp.js';
@@ -379,6 +379,16 @@ export class AuthService {
     const userResult = await this.userRepo.findById(payload.value.sub!);
     if (userResult.isErr() || !userResult.value) {
       return Result.err(new UnauthorizedError('User not found'));
+    }
+
+    // A refresh token outlives a suspension by 7 days unless status is re-checked here
+    if (userResult.value.status !== 'ACTIVE') {
+      return Result.err(new UnauthorizedError('Account is not active'));
+    }
+
+    // Reject tokens predating the last password reset
+    if (isIssuedBeforeEpoch(payload.value, userResult.value.tokensValidFrom)) {
+      return Result.err(new UnauthorizedError('Token has been invalidated'));
     }
 
     // Revoke old token and issue new ones

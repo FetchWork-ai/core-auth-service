@@ -31,6 +31,11 @@ export class OtpRepository {
           purpose,
           expiresAt: { gt: new Date() },
         },
+        // save() clears prior records for the same email+purpose, but concurrent
+        // requests can still leave two live rows. Without an explicit order
+        // Postgres may return either, and the user would be checked against a
+        // code they were never sent.
+        orderBy: { createdAt: 'desc' },
       });
       return Result.ok(record);
     } catch (error) {

@@ -51,6 +51,9 @@ model User {
   roles        UserRole   @default(CANDIDATE)
   linkedinProfileUrl String?  @map("linkedin_profile_url")
   githubProfileUrl   String?  @map("github_profile_url")
+  // Token epoch: any JWT issued before this instant is rejected. Bumped on
+  // password reset so an attacker's outstanding refresh token dies with the reset.
+  tokensValidFrom DateTime @default(now()) @map("tokens_valid_from")
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 

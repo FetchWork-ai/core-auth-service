@@ -107,7 +107,9 @@ export class UserRepository {
     try {
       const user = await this.prisma.user.update({
         where: { id },
-        data: { passwordHash },
+        // Bumping the token epoch alongside the hash is what makes a reset actually
+        // end existing sessions — every token issued before this instant stops verifying.
+        data: { passwordHash, tokensValidFrom: new Date() },
       });
       return Result.ok(user);
     } catch (error) {

@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { JwtService } from '../infrastructure/security/jwt.js';
+import { JwtService, isIssuedBeforeEpoch } from '../infrastructure/security/jwt.js';
 import { UserRepository } from '../modules/user/user.repository.js';
 import { UnauthorizedError } from '../shared/errors.js';
 
@@ -55,7 +55,23 @@ export function authenticate(jwtService: JwtService, userRepo: UserRepository) {
 
     const user = userResult.value;
 
-    // 5. Attach to request context for downstream handlers
+    // 5. A suspended account must lose access immediately, not when its token expires
+    if (user.status !== 'ACTIVE') {
+      return reply.status(403).send({
+        error: 'ACCOUNT_NOT_ACTIVE',
+        message: 'This account is not active',
+      });
+    }
+
+    // 6. Reject tokens issued before the user's last password reset
+    if (isIssuedBeforeEpoch(payload.value, user.tokensValidFrom)) {
+      return reply.status(401).send({
+        error: 'TOKEN_INVALIDATED',
+        message: 'This token was invalidated by a credential change',
+      });
+    }
+
+    // 7. Attach to request context for downstream handlers
     request.currentUser = {
       id: user.id,
       email: user.email,
